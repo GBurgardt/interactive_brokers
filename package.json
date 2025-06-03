@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node index.js",
     "bot": "node trading-bot.js",
-    "analyst": "node market-analyst-bot.js"
+    "analyst": "node market-analyst-bot.js",
+    "verify": "node verify-portfolio.js"
   },
   "dependencies": {
     "ib": "^0.2.9",

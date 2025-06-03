@@ -613,13 +613,37 @@ async function executeAction(tradingAction) {
     
     ibClient.on('orderStatus', orderStatusHandler);
     
+    // Verificar conexión antes de enviar
+    if (!ibClient.connected) {
+      console.error(chalk.red('\n❌ Conexión perdida con IB - Reintentando conexión...'));
+      
+      // Intentar reconectar
+      try {
+        ibClient.connect();
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Esperar reconexión
+      } catch (reconnectError) {
+        console.error(chalk.red('❌ No se pudo reconectar. Orden cancelada.'));
+        return;
+      }
+    }
+    
     // Enviar orden a Interactive Brokers
-    ibClient.placeOrder(currentOrderId, contract, order);
-    
-    console.log(chalk.cyan('\n⏳ Orden enviada a Interactive Brokers...'));
-    console.log(chalk.gray('   Esperando confirmación...'));
-    
-    nextOrderId++;
+    try {
+      ibClient.placeOrder(currentOrderId, contract, order);
+      console.log(chalk.cyan('\n⏳ Orden enviada a Interactive Brokers...'));
+      console.log(chalk.gray('   Esperando confirmación...'));
+      nextOrderId++;
+      
+      // Timeout de seguridad para la orden
+      setTimeout(() => {
+        console.log(chalk.yellow('\n⏰ Timeout esperando confirmación de orden'));
+        console.log(chalk.gray('   La orden puede haberse ejecutado igualmente'));
+      }, 10000);
+      
+    } catch (orderError) {
+      console.error(chalk.red('\n❌ Error enviando orden:'), orderError.message);
+      console.log(chalk.yellow('💡 Usa "npm run verify" para verificar si se ejecutó'));
+    }
     
   } catch (error) {
     console.error(chalk.red('\n❌ Error ejecutando orden:'), error.message);
