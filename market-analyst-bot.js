@@ -538,15 +538,39 @@ async function executeAction(tradingAction) {
     }
     
     if (side === 'SELL') {
-      const position = portfolio.positions.find(p => p.symbol === symbol);
+      // Buscar posición exacta o variantes del símbolo
+      let position = portfolio.positions.find(p => p.symbol === symbol);
+      
+      // Si no encuentra, buscar variantes comunes
+      if (!position) {
+        if (symbol === 'GOOGL') {
+          position = portfolio.positions.find(p => p.symbol === 'GOOG');
+          if (position) {
+            console.log(chalk.yellow(`📝 Nota: Ajustando GOOGL → GOOG para la orden`));
+            // Actualizar el símbolo para la ejecución
+            tradingAction.symbol = 'GOOG';
+          }
+        } else if (symbol === 'GOOG') {
+          position = portfolio.positions.find(p => p.symbol === 'GOOGL');
+          if (position) {
+            console.log(chalk.yellow(`📝 Nota: Ajustando GOOG → GOOGL para la orden`));
+            tradingAction.symbol = 'GOOGL';
+          }
+        }
+      }
+      
       if (!position || position.shares < quantity) {
         console.log(chalk.red(`\n❌ No tienes suficientes acciones de ${symbol} para vender`));
+        console.log(chalk.gray(`   Posiciones disponibles: ${portfolio.positions.map(p => `${p.symbol}(${p.shares})`).join(', ')}`));
         return;
       }
+      
+      console.log(chalk.green(`✅ Verificado: Tienes ${position.shares} acciones de ${position.symbol}`));
     }
     
-    // Crear contrato y orden
-    const contract = ib.contract.stock(symbol, 'SMART', 'USD');
+    // Crear contrato y orden (usar el símbolo actualizado si fue ajustado)
+    const finalSymbol = tradingAction.symbol; // Podría haberse actualizado arriba
+    const contract = ib.contract.stock(finalSymbol, 'SMART', 'USD');
     let order;
     
     if (orderType === 'MARKET') {
@@ -558,13 +582,13 @@ async function executeAction(tradingAction) {
     
     // Mostrar detalles de la orden
     if (side === 'BUY') {
-      console.log(chalk.green(`\n📈 Ejecutando COMPRA: ${quantity} ${symbol} @ MARKET`));
+      console.log(chalk.green(`\n📈 Ejecutando COMPRA: ${quantity} ${finalSymbol} @ MARKET`));
     } else {
-      console.log(chalk.red(`\n📉 Ejecutando VENTA: ${quantity} ${symbol} @ MARKET`));
+      console.log(chalk.red(`\n📉 Ejecutando VENTA: ${quantity} ${finalSymbol} @ MARKET`));
     }
     
     console.log(chalk.gray(`   Order ID: ${nextOrderId}`));
-    console.log(chalk.gray(`   Contrato: ${symbol} (SMART/USD)`));
+    console.log(chalk.gray(`   Contrato: ${finalSymbol} (SMART/USD)`));
     
     // Configurar listener para esta orden específica
     const currentOrderId = nextOrderId;
@@ -645,6 +669,8 @@ async function connectToIB(config) {
     });
 
     ibClient.on('position', (account, contract, pos, avgCost) => {
+      console.log(chalk.blue(`📊 Posición recibida: ${contract.symbol} = ${pos} @ ${avgCost}`));
+      
       if (pos !== 0) {
         const existingPos = portfolio.positions.find(p => p.symbol === contract.symbol);
         if (!existingPos) {
@@ -653,12 +679,19 @@ async function connectToIB(config) {
             shares: pos,
             avgCost: avgCost
           });
+          console.log(chalk.green(`✅ Agregada posición: ${contract.symbol}`));
         } else {
           // Actualizar posición existente
           existingPos.shares = pos;
           existingPos.avgCost = avgCost;
+          console.log(chalk.yellow(`🔄 Actualizada posición: ${contract.symbol}`));
         }
       }
+    });
+
+    ibClient.on('positionEnd', () => {
+      console.log(chalk.cyan('🏁 Fin de posiciones recibidas'));
+      console.log(chalk.cyan(`Total posiciones en portfolio: ${portfolio.positions.length}`));
     });
 
     ibClient.connect();
@@ -676,15 +709,21 @@ async function runAnalysisCycle() {
     console.log(chalk.gray('📊 Actualizando datos del portfolio...'));
     
     if (ibClient) {
-      // Limpiar datos anteriores
-      portfolio.positions = [];
+      console.log(chalk.gray(`   Portfolio actual: ${portfolio.positions.length} posiciones`));
       
-      // Solicitar datos actualizados
+      // NO limpiar posiciones si ya las tenemos y la conexión es estable
+      if (portfolio.positions.length === 0) {
+        console.log(chalk.gray('   No hay posiciones, solicitando desde IB...'));
+        ibClient.reqPositions();
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      } else {
+        console.log(chalk.green('   ✅ Usando posiciones existentes (conexión estable)'));
+      }
+      
+      // Siempre actualizar datos de cuenta (no falla como reqPositions)
+      console.log(chalk.gray('   Actualizando efectivo y valor total...'));
       ibClient.reqAccountSummary(Date.now(), 'All', 'TotalCashValue,NetLiquidation');
-      ibClient.reqPositions();
-      
-      // Esperar más tiempo para asegurar que llegan todos los datos
-      await new Promise(resolve => setTimeout(resolve, 4000));
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
       // Mostrar portfolio actualizado
       console.log(chalk.green(`💼 Portfolio actualizado:`));
@@ -696,7 +735,55 @@ async function runAnalysisCycle() {
         portfolio.positions.forEach(p => {
           console.log(chalk.gray(`   - ${p.symbol}: ${p.shares} acciones @ $${p.avgCost.toFixed(2)}`));
         });
+      } else {
+        console.log(chalk.red(`   ⚠️  NO SE DETECTARON POSICIONES - Esto puede ser un problema`));
+        console.log(chalk.yellow(`   💡 Revisa si TWS muestra tus posiciones correctamente`));
       }
+      
+      // DEBUG: Mostrar lo que vamos a enviar a GPT-4.5
+      console.log(chalk.magenta('\n🔍 DEBUG - DATOS QUE SE ENVÍAN A GPT-4.5:'));
+      console.log(chalk.cyan('═'.repeat(60)));
+      
+      const portfolioContext = `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MI PORTFOLIO ACTUAL (DATOS REALES DE INTERACTIVE BROKERS):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+RESUMEN FINANCIERO:
+• Valor total del portfolio: $${portfolio.totalValue.toFixed(2)}
+• Efectivo disponible: $${portfolio.cash.toFixed(2)}
+• Capital invertido: $${(portfolio.totalValue - portfolio.cash).toFixed(2)}
+
+POSICIONES ACTUALES DETALLADAS:
+${portfolio.positions.length > 0 ? 
+    portfolio.positions.map(p => {
+      const currentValue = p.shares * p.avgCost;
+      const percentage = ((currentValue / portfolio.totalValue) * 100).toFixed(1);
+      return `
+• ${p.symbol}: 
+  - Cantidad: ${p.shares} acciones
+  - Precio promedio: $${p.avgCost.toFixed(2)}
+  - Valor total: $${currentValue.toFixed(2)}
+  - Porcentaje del portfolio: ${percentage}%
+  - Máximo vendible: ${p.shares} acciones`;
+    }).join('') : 
+    '\n• Sin posiciones abiertas actualmente'}
+
+LIMITACIONES PARA ÓRDENES:
+• Solo puedes COMPRAR si el costo estimado ≤ $${portfolio.cash.toFixed(2)} (efectivo disponible)
+• Solo puedes VENDER acciones que POSEES actualmente
+• Acciones disponibles para venta:
+${portfolio.positions.length > 0 ? 
+    portfolio.positions.map(p => `  - ${p.symbol}: máximo ${p.shares} acciones`).join('\n') : 
+    '  - Ninguna (sin posiciones)'}
+
+IMPORTANTE: Al sugerir acciones ejecutables, RESPETA estos límites exactos.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+      
+      console.log(chalk.white(portfolioContext));
+      console.log(chalk.cyan('═'.repeat(60)));
+      console.log(chalk.magenta('🔍 FIN DEBUG\n'));
     } else {
       console.error(chalk.red('❌ No hay conexión con Interactive Brokers'));
       console.log(chalk.yellow('💡 Asegúrate de que TWS esté abierto y conectado'));
