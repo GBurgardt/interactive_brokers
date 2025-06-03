@@ -26,6 +26,30 @@ console.log(chalk.blue.bold('🧠 Market Intelligence Analyst'));
 console.log(chalk.gray('━'.repeat(50)));
 console.log(chalk.cyan('Tu analista personal de mercado al estilo Elon Musk\n'));
 
+// Selector de ambiente
+async function selectEnvironment() {
+  const { environment } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'environment',
+      message: 'Selecciona el ambiente:',
+      choices: [
+        {
+          name: '💎 Cuenta Real (puerto 7496)',
+          value: { port: 7496, name: 'REAL', color: 'green' }
+        },
+        {
+          name: '🧪 Paper Trading (puerto 7497)',
+          value: { port: 7497, name: 'DEMO', color: 'yellow' }
+        }
+      ],
+      default: 1
+    }
+  ]);
+
+  return environment;
+}
+
 // Fase 1: Búsqueda REAL de noticias tecnológicas
 async function searchTechNews() {
   const spinner = ora('🔍 Escaneando el mercado tecnológico...').start();
@@ -400,14 +424,14 @@ async function executeAction(actionText) {
 }
 
 // Conectar a IB
-async function connectToIB() {
-  const spinner = ora('Conectando con Interactive Brokers...').start();
+async function connectToIB(config) {
+  const spinner = ora(`Conectando con Interactive Brokers (${config.name})...`).start();
   
   return new Promise((resolve) => {
     ibClient = new ib({
       clientId: 2,
       host: '127.0.0.1',
-      port: 7497
+      port: config.port
     });
 
     portfolio.positions = [];
@@ -419,7 +443,7 @@ async function connectToIB() {
     });
 
     ibClient.on('nextValidId', (orderId) => {
-      spinner.succeed('✅ Conectado a IB');
+      spinner.succeed(`✅ Conectado a ${chalk[config.color].bold(config.name)}`);
       nextOrderId = orderId;
       
       ibClient.reqAccountSummary(1, 'All', 'TotalCashValue,NetLiquidation');
@@ -505,7 +529,11 @@ async function main() {
     process.exit(1);
   }
   
-  await connectToIB();
+  // Seleccionar ambiente
+  const config = await selectEnvironment();
+  console.clear();
+  
+  await connectToIB(config);
   
   // Ejecutar análisis inmediatamente
   await runAnalysisCycle();
