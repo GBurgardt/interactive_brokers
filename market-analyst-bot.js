@@ -119,16 +119,42 @@ async function analyzeMarketWithGPT(marketData, portfolio) {
   const spinner = ora('🤖 Procesando inteligencia de mercado con GPT-4.5...').start();
   
   try {
-    // Preparar contexto del portfolio
+    // Preparar contexto del portfolio con datos REALES y completos
     const portfolioContext = `
-MI PORTFOLIO ACTUAL:
-━━━━━━━━━━━━━━━━━━
-• Valor total: $${portfolio.totalValue.toFixed(2)}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MI PORTFOLIO ACTUAL (DATOS REALES DE INTERACTIVE BROKERS):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+RESUMEN FINANCIERO:
+• Valor total del portfolio: $${portfolio.totalValue.toFixed(2)}
 • Efectivo disponible: $${portfolio.cash.toFixed(2)}
-• Posiciones actuales:
+• Capital invertido: $${(portfolio.totalValue - portfolio.cash).toFixed(2)}
+
+POSICIONES ACTUALES DETALLADAS:
 ${portfolio.positions.length > 0 ? 
-    portfolio.positions.map(p => `  - ${p.symbol}: ${p.shares} acciones @ $${p.avgCost.toFixed(2)} (valor: $${(p.shares * p.avgCost).toFixed(2)})`).join('\n') : 
-    '  - Sin posiciones abiertas'}
+    portfolio.positions.map(p => {
+      const currentValue = p.shares * p.avgCost;
+      const percentage = ((currentValue / portfolio.totalValue) * 100).toFixed(1);
+      return `
+• ${p.symbol}: 
+  - Cantidad: ${p.shares} acciones
+  - Precio promedio: $${p.avgCost.toFixed(2)}
+  - Valor total: $${currentValue.toFixed(2)}
+  - Porcentaje del portfolio: ${percentage}%
+  - Máximo vendible: ${p.shares} acciones`;
+    }).join('') : 
+    '\n• Sin posiciones abiertas actualmente'}
+
+LIMITACIONES PARA ÓRDENES:
+• Solo puedes COMPRAR si el costo estimado ≤ $${portfolio.cash.toFixed(2)} (efectivo disponible)
+• Solo puedes VENDER acciones que POSEES actualmente
+• Acciones disponibles para venta:
+${portfolio.positions.length > 0 ? 
+    portfolio.positions.map(p => `  - ${p.symbol}: máximo ${p.shares} acciones`).join('\n') : 
+    '  - Ninguna (sin posiciones)'}
+
+IMPORTANTE: Al sugerir acciones ejecutables, RESPETA estos límites exactos.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
 
     // Preparar contexto de noticias
@@ -180,14 +206,26 @@ OPCIÓN 3 - NO HACER NADA:
   <side>HOLD</side>
 </accion_ejecutable>
 
-REGLAS ABSOLUTAS:
+REGLAS ABSOLUTAS PARA ACCION_EJECUTABLE:
 - JAMÁS pongas "establecer alerta", "monitorear", "esperar" en accion_ejecutable
 - side SOLO puede ser: BUY, SELL, HOLD (nada más)
 - symbol SOLO tickers válidos: AAPL, GOOGL, MSFT, TSLA, NVDA, AMZN, META
 - quantity SOLO números enteros positivos
 - order_type SOLO puede ser: MARKET (por ahora)
 - Si no hay acción inmediata que ejecutar → HOLD
-- Las estrategias van en accion_estrategica, NO en accion_ejecutable`;
+- Las estrategias van en accion_estrategica, NO en accion_ejecutable
+
+CRÍTICO - VALIDACIONES OBLIGATORIAS:
+- Para BUY: El costo (quantity × precio_estimado) DEBE ser ≤ efectivo disponible
+- Para SELL: La quantity DEBE ser ≤ acciones que POSEE realmente
+- NUNCA sugieras vender más acciones de las que el usuario tiene
+- NUNCA sugieras comprar si no hay efectivo suficiente
+- USA LA INFORMACIÓN DEL PORTFOLIO que te proporciono arriba para validar
+
+EJEMPLOS DE LO QUE NO DEBES HACER:
+❌ Sugerir vender 10 GOOGL si solo tiene 5
+❌ Sugerir comprar $5000 en acciones si solo tiene $139 en efectivo
+❌ Ignorar las limitaciones reales del portfolio`;
 
     const userPrompt = `${portfolioContext}
 
@@ -578,7 +616,11 @@ async function connectToIB(config) {
     portfolio.positions = [];
 
     ibClient.on('error', (err) => {
-      if (!err.message.toLowerCase().includes('info')) {
+      const message = err.message.toLowerCase();
+      if (!message.includes('conexión') && 
+          !message.includes('funciona correctamente') && 
+          !message.includes('hmds') &&
+          !message.includes('modo solo lectura')) {
         console.error(chalk.red(`Error IB: ${err.message}`));
       }
     });
@@ -604,11 +646,18 @@ async function connectToIB(config) {
 
     ibClient.on('position', (account, contract, pos, avgCost) => {
       if (pos !== 0) {
-        portfolio.positions.push({
-          symbol: contract.symbol,
-          shares: pos,
-          avgCost: avgCost
-        });
+        const existingPos = portfolio.positions.find(p => p.symbol === contract.symbol);
+        if (!existingPos) {
+          portfolio.positions.push({
+            symbol: contract.symbol,
+            shares: pos,
+            avgCost: avgCost
+          });
+        } else {
+          // Actualizar posición existente
+          existingPos.shares = pos;
+          existingPos.avgCost = avgCost;
+        }
       }
     });
 
@@ -623,11 +672,35 @@ async function runAnalysisCycle() {
   console.log(chalk.gray('━'.repeat(60)));
   
   try {
-    // Actualizar portfolio
-    if (ibClient && ibClient.connected) {
-      ibClient.reqAccountSummary(2, 'All', 'TotalCashValue,NetLiquidation');
+    // CRÍTICO: Actualizar portfolio COMPLETO antes del análisis
+    console.log(chalk.gray('📊 Actualizando datos del portfolio...'));
+    
+    if (ibClient) {
+      // Limpiar datos anteriores
+      portfolio.positions = [];
+      
+      // Solicitar datos actualizados
+      ibClient.reqAccountSummary(Date.now(), 'All', 'TotalCashValue,NetLiquidation');
       ibClient.reqPositions();
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Esperar más tiempo para asegurar que llegan todos los datos
+      await new Promise(resolve => setTimeout(resolve, 4000));
+      
+      // Mostrar portfolio actualizado
+      console.log(chalk.green(`💼 Portfolio actualizado:`));
+      console.log(chalk.gray(`   Efectivo: $${portfolio.cash.toFixed(2)}`));
+      console.log(chalk.gray(`   Valor total: $${portfolio.totalValue.toFixed(2)}`));
+      console.log(chalk.gray(`   Posiciones: ${portfolio.positions.length}`));
+      
+      if (portfolio.positions.length > 0) {
+        portfolio.positions.forEach(p => {
+          console.log(chalk.gray(`   - ${p.symbol}: ${p.shares} acciones @ $${p.avgCost.toFixed(2)}`));
+        });
+      }
+    } else {
+      console.error(chalk.red('❌ No hay conexión con Interactive Brokers'));
+      console.log(chalk.yellow('💡 Asegúrate de que TWS esté abierto y conectado'));
+      return;
     }
     
     // Buscar noticias
