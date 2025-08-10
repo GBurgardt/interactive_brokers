@@ -262,24 +262,16 @@ Genera la respuesta en el XML exacto especificado. Recuerda: el <monologo> debe 
       }
     ];
 
-    // Llamar a OpenAI con GPT-5
+    // Llamar a OpenAI con GPT-5 (parámetros mínimos compatibles)
     const response = await openai.responses.create({
       model: "gpt-5",
       input: apiInput,
-      text: {
-        "format": {
-          "type": "text"
-        }
-      },
-      reasoning: {},
-      tools: [],
-      temperature: 0.35,
-      max_output_tokens: 5000,
-      top_p: 0.9,
-      store: true
+      max_output_tokens: 5000
     });
 
-    const responseText = response.output?.[0]?.content?.[0]?.text || "";
+    const responseText =
+      response.output_text ||
+      response.output?.[0]?.content?.[0]?.text || "";
     
     spinner.succeed('✅ Análisis completado');
     
@@ -358,7 +350,7 @@ function parseAnalysis(xmlText) {
 async function displayAnalysis(analysis) {
   if (!analysis) return;
   
-  // PANORAMA
+  // PANORAMA (arriba para contexto)
   console.log(chalk.blue('\n' + '═'.repeat(60)));
   console.log(chalk.blue.bold('📊 PANORAMA DEL MERCADO'));
   console.log(chalk.blue('═'.repeat(60)));
@@ -703,8 +695,8 @@ async function runAnalysisCycle() {
         console.log(chalk.yellow(`   💡 Revisa si TWS muestra tus posiciones correctamente`));
       }
       
-      // DEBUG: Mostrar lo que vamos a enviar a GPT-4.5
-      console.log(chalk.magenta('\n🔍 DEBUG - DATOS QUE SE ENVÍAN A GPT-4.5:'));
+  // DEBUG: Mostrar lo que vamos a enviar a GPT-5
+  console.log(chalk.magenta('\n🔍 DEBUG - DATOS QUE SE ENVÍAN A GPT-5:'));
       console.log(chalk.cyan('═'.repeat(60)));
       
       const portfolioContext = `
