@@ -132,8 +132,10 @@ export function useHistoricalData(getClient, isConnected) {
         // Ignore info/warning messages:
         // 2104, 2106, 2158 = connection info
         // 2176 = "fractional share size rules" warning (safe to ignore)
+        // 10089 = "requires additional API subscriptions" (delayed data still comes)
         // 10167, 10168 = delayed data info
-        if (code && [2104, 2106, 2158, 2176, 10167, 10168].includes(code)) {
+        // 300, 354 = ticker ID not found / not subscribed
+        if (code && [300, 354, 2104, 2106, 2158, 2176, 10089, 10167, 10168].includes(code)) {
           debug(`Ignoring info/warning code ${code}`);
           return;
         }
