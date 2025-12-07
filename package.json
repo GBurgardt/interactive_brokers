@@ -1,11 +1,17 @@
 {
-  "name": "ib-connection-test",
-  "version": "1.0.0",
-  "description": "Minimal Interactive Brokers API connection test",
-  "main": "cli.js",
+  "name": "folio",
+  "version": "2.0.0",
+  "description": "Beautiful Interactive Brokers portfolio manager",
+  "type": "module",
+  "main": "src/index.jsx",
+  "bin": {
+    "ib": "./src/index.jsx",
+    "folio": "./src/index.jsx"
+  },
   "scripts": {
-    "start": "node cli.js",
-    "cli": "node cli.js",
+    "start": "tsx src/index.jsx",
+    "dev": "tsx --watch src/index.jsx",
+    "old": "node cli.js",
     "portfolio": "node projects/portfolio-tracker/index.js",
     "bot": "node projects/trading-bot/index.js",
     "analyst": "node projects/market-analyst/index.js",
@@ -14,12 +20,19 @@
     "buy-tsla": "node projects/buy-tsla/index.js"
   },
   "dependencies": {
-    "ib": "^0.2.9",
-    "inquirer": "^8.2.6",
-    "chalk": "^4.1.2",
-    "ora": "^5.4.1",
-    "openai": "^4.52.7",
     "axios": "^1.6.7",
-    "dotenv": "^16.4.5"
+    "chalk": "^4.1.2",
+    "dotenv": "^16.4.5",
+    "ib": "^0.2.9",
+    "ink": "^5.0.1",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "inquirer": "^8.2.6",
+    "openai": "^4.52.7",
+    "ora": "^5.4.1",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
   }
 }
