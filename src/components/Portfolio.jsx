@@ -11,7 +11,7 @@ export function Portfolio({
   accountId,
   prices,
   loading,
-  onSelectPosition,
+  onViewChart,
   onBuy,
   onSearch,
   onRefresh,
@@ -30,9 +30,9 @@ export function Portfolio({
     } else if (key.downArrow) {
       setSelectedIndex(prev => Math.min(totalItems - 1, prev + 1));
     } else if (key.return) {
-      // Enter on a position
+      // Enter on a position -> go directly to chart
       if (selectedIndex < positions.length) {
-        onSelectPosition?.(positions[selectedIndex]);
+        onViewChart?.(positions[selectedIndex]);
       }
     } else if (input === 'b') {
       // Buy - if on position, buy that symbol; otherwise search

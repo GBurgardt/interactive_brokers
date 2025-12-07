@@ -11,17 +11,24 @@ const debug = (...args) => {
 };
 
 export function ChartScreen({
-  position,
+  symbol,
+  position, // Optional - only if user owns the stock
   historicalData,
   loading,
   error,
   currentPrice,
   onPeriodChange,
+  onBuy,
+  onSell,
   onBack,
 }) {
-  const { symbol, avgCost } = position;
   const [selectedPeriod, setSelectedPeriod] = useState(DEFAULT_PERIOD);
   const { stdout } = useStdout();
+
+  // Extract data from position if available
+  const avgCost = position?.avgCost;
+  const quantity = position?.quantity;
+  const owned = !!position;
 
   // Get terminal width for chart sizing
   const terminalWidth = stdout?.columns || 80;
@@ -52,6 +59,12 @@ export function ChartScreen({
       if (currentIndex > 0) {
         setSelectedPeriod(PERIOD_KEYS[currentIndex - 1]);
       }
+    } else if (input === 'b') {
+      debug('Buy triggered for', symbol);
+      onBuy?.(symbol);
+    } else if (input === 's' && owned) {
+      debug('Sell triggered for', symbol);
+      onSell?.(symbol, quantity);
     }
   });
 
@@ -199,7 +212,12 @@ export function ChartScreen({
         paddingY={1}
         justifyContent="space-between"
       >
-        <Text bold color="white">{symbol}</Text>
+        <Box>
+          <Text bold color="white">{symbol}</Text>
+          {owned && (
+            <Text color="gray">   {quantity} acc @ {formatMoney(avgCost)}</Text>
+          )}
+        </Box>
         <Text color={changeColor} bold>
           {changeSign}{formatPercent(chartData.changePercent)} en {PERIODS[selectedPeriod].label}
         </Text>
@@ -247,7 +265,9 @@ export function ChartScreen({
         justifyContent="space-between"
       >
         <Text>{periodSelector}</Text>
-        <Text color="gray">[↑↓] Período  [←] Volver</Text>
+        <Text color="gray">
+          [↑↓] Período  [b] Comprar{owned ? '  [s] Vender' : ''}  [←] Volver
+        </Text>
       </Box>
     </Box>
   );

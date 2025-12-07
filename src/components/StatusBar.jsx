@@ -10,14 +10,9 @@ const shortcuts = {
     { key: 'r', label: 'Refrescar' },
     { key: 'q', label: 'Salir' },
   ],
-  detail: [
-    { key: '→', label: 'Histórico' },
-    { key: 'b', label: 'Comprar' },
-    { key: 's', label: 'Vender' },
-    { key: '←', label: 'Volver' },
-  ],
   chart: [
     { key: '↑↓', label: 'Período' },
+    { key: 'b', label: 'Comprar' },
     { key: '←', label: 'Volver' },
   ],
   buy: [

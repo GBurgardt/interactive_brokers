@@ -16,13 +16,12 @@ import { useHistoricalData, DEFAULT_PERIOD } from '../hooks/useHistoricalData.js
 
 import { Loading, ConnectionError, OrderResult } from './Loading.jsx';
 import Portfolio from './Portfolio.jsx';
-import PositionDetail from './PositionDetail.jsx';
 import BuyScreen from './BuyScreen.jsx';
 import SellScreen from './SellScreen.jsx';
 import SearchScreen from './SearchScreen.jsx';
 import ChartScreen from './ChartScreen.jsx';
 
-// Screens: connecting, error, portfolio, detail, chart, buy, sell, search, order-result
+// Screens: connecting, error, portfolio, chart, buy, sell, search, order-result
 export function App({ paperTrading = false }) {
   const { exit } = useApp();
 
@@ -70,7 +69,8 @@ export function App({ paperTrading = false }) {
 
   const [screen, setScreen] = useState('connecting');
   const [chartPeriod, setChartPeriod] = useState(DEFAULT_PERIOD);
-  const [selectedPosition, setSelectedPosition] = useState(null);
+  const [chartSymbol, setChartSymbol] = useState(null); // Symbol being viewed in chart
+  const [chartPosition, setChartPosition] = useState(null); // Position if owned
   const [buySymbol, setBuySymbol] = useState(null);
   const [sellData, setSellData] = useState(null);
   const [lastOrderResult, setLastOrderResult] = useState(null);
@@ -114,33 +114,31 @@ export function App({ paperTrading = false }) {
   }, [isConnected, positions, fetchPrice]);
 
   // Handlers
-  const handleSelectPosition = useCallback((position) => {
-    setSelectedPosition(position);
-    setScreen('detail');
-    fetchPrice(position.symbol).catch(() => {});
-    // Prefetch historical data for smooth transition to chart
-    prefetchHistorical(position.symbol, DEFAULT_PERIOD);
-  }, [fetchPrice, prefetchHistorical]);
+  const handleViewChart = useCallback((symbolOrPosition) => {
+    // Can receive either a position object or a symbol string
+    const isPosition = typeof symbolOrPosition === 'object';
+    const symbol = isPosition ? symbolOrPosition.symbol : symbolOrPosition;
+    const position = isPosition ? symbolOrPosition : null;
 
-  const handleChart = useCallback((symbol) => {
-    debug('Navigating to chart for', symbol);
+    debug('Navigating to chart for', symbol, isPosition ? '(owned)' : '(not owned)');
+
+    setChartSymbol(symbol);
+    setChartPosition(position);
     setScreen('chart');
     setChartPeriod(DEFAULT_PERIOD);
+
+    // Fetch data
+    fetchPrice(symbol).catch(() => {});
     fetchHistorical(symbol, DEFAULT_PERIOD).catch(() => {});
-  }, [fetchHistorical]);
+  }, [fetchPrice, fetchHistorical]);
 
   const handleChartPeriodChange = useCallback((period) => {
     debug('Chart period changed to', period);
     setChartPeriod(period);
-    if (selectedPosition) {
-      fetchHistorical(selectedPosition.symbol, period).catch(() => {});
+    if (chartSymbol) {
+      fetchHistorical(chartSymbol, period).catch(() => {});
     }
-  }, [fetchHistorical, selectedPosition]);
-
-  const handleBackFromChart = useCallback(() => {
-    debug('Going back from chart to detail');
-    setScreen('detail');
-  }, []);
+  }, [fetchHistorical, chartSymbol]);
 
   const handleBuy = useCallback((symbol) => {
     setBuySymbol(symbol);
@@ -157,10 +155,6 @@ export function App({ paperTrading = false }) {
   const handleSearch = useCallback(() => {
     setScreen('search');
   }, []);
-
-  const handleSelectSymbol = useCallback((symbol) => {
-    handleBuy(symbol);
-  }, [handleBuy]);
 
   const handleConfirmBuy = useCallback(async (symbol, quantity) => {
     try {
@@ -184,7 +178,8 @@ export function App({ paperTrading = false }) {
 
   const handleBack = useCallback(() => {
     setScreen('portfolio');
-    setSelectedPosition(null);
+    setChartSymbol(null);
+    setChartPosition(null);
     setBuySymbol(null);
     setSellData(null);
   }, []);
@@ -245,7 +240,7 @@ export function App({ paperTrading = false }) {
           accountId={accountId}
           prices={prices}
           loading={portfolioLoading}
-          onSelectPosition={handleSelectPosition}
+          onViewChart={handleViewChart}
           onBuy={handleBuy}
           onSearch={handleSearch}
           onRefresh={handleRefresh}
@@ -253,27 +248,18 @@ export function App({ paperTrading = false }) {
         />
       )}
 
-      {screen === 'detail' && selectedPosition && (
-        <PositionDetail
-          position={selectedPosition}
-          currentPrice={prices[selectedPosition.symbol]?.price}
-          priceLoading={isPriceLoading(selectedPosition.symbol)}
+      {screen === 'chart' && chartSymbol && (
+        <ChartScreen
+          symbol={chartSymbol}
+          position={chartPosition}
+          historicalData={getHistoricalData(chartSymbol, chartPeriod)}
+          loading={isHistoricalLoading(chartSymbol, chartPeriod)}
+          error={getHistoricalError(chartSymbol, chartPeriod)}
+          currentPrice={prices[chartSymbol]?.price}
+          onPeriodChange={handleChartPeriodChange}
           onBuy={handleBuy}
           onSell={handleSell}
           onBack={handleBack}
-          onChart={handleChart}
-        />
-      )}
-
-      {screen === 'chart' && selectedPosition && (
-        <ChartScreen
-          position={selectedPosition}
-          historicalData={getHistoricalData(selectedPosition.symbol, chartPeriod)}
-          loading={isHistoricalLoading(selectedPosition.symbol, chartPeriod)}
-          error={getHistoricalError(selectedPosition.symbol, chartPeriod)}
-          currentPrice={prices[selectedPosition.symbol]?.price}
-          onPeriodChange={handleChartPeriodChange}
-          onBack={handleBackFromChart}
         />
       )}
 
@@ -301,7 +287,7 @@ export function App({ paperTrading = false }) {
 
       {screen === 'search' && (
         <SearchScreen
-          onSelectSymbol={handleSelectSymbol}
+          onViewChart={handleViewChart}
           onCancel={handleBack}
         />
       )}

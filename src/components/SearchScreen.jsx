@@ -6,7 +6,7 @@ import StatusBar from './StatusBar.jsx';
 const POPULAR_SYMBOLS = ['AAPL', 'GOOGL', 'MSFT', 'AMZN', 'TSLA', 'META', 'NVDA', 'AMD'];
 
 export function SearchScreen({
-  onSelectSymbol,
+  onViewChart,
   onCancel,
 }) {
   const [query, setQuery] = useState('');
@@ -25,11 +25,11 @@ export function SearchScreen({
     } else if (key.downArrow) {
       setSelectedIndex(prev => Math.min(filteredSymbols.length - 1, prev + 1));
     } else if (key.return) {
-      // Si hay query y no hay resultados, usar query como símbolo
+      // Enter -> go directly to chart of selected symbol
       if (query && filteredSymbols.length === 0) {
-        onSelectSymbol?.(query.toUpperCase());
+        onViewChart?.(query.toUpperCase());
       } else if (filteredSymbols.length > 0) {
-        onSelectSymbol?.(filteredSymbols[selectedIndex]);
+        onViewChart?.(filteredSymbols[selectedIndex]);
       }
     }
   });
