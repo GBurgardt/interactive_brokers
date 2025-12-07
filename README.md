@@ -1,3 +1,4 @@
+
 # Interactive Brokers API - Conexión Mínima
 
 Script mínimo para conectarse a Interactive Brokers y obtener información básica de la cuenta.
