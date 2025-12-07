@@ -97,9 +97,10 @@ export function useMarketData(getClient, isConnected) {
 
         // Info/warning codes to ignore:
         // 2104, 2106, 2158 = connection info
+        // 2176 = "fractional share size rules" warning (safe to ignore)
         // 10167 = "No live subscription, showing delayed data" (NOT an error!)
         // 10168 = "Delayed market data" info
-        if (code && [2104, 2106, 2158, 10167, 10168].includes(code)) {
+        if (code && [2104, 2106, 2158, 2176, 10167, 10168].includes(code)) {
           debug(`  ↳ Ignored: info message (code ${code})`);
           return;
         }

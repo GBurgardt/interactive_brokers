@@ -25,6 +25,7 @@
     "buy-tsla": "node projects/buy-tsla/index.js"
   },
   "dependencies": {
+    "asciichart": "^1.5.25",
     "axios": "^1.6.7",
     "chalk": "^4.1.2",
     "dotenv": "^16.4.5",

@@ -12,6 +12,7 @@ import { useIBConnection } from '../hooks/useIBConnection.js';
 import { usePortfolio } from '../hooks/usePortfolio.js';
 import { useMarketData } from '../hooks/useMarketData.js';
 import { useTrade } from '../hooks/useTrade.js';
+import { useHistoricalData, DEFAULT_PERIOD } from '../hooks/useHistoricalData.js';
 
 import { Loading, ConnectionError, OrderResult } from './Loading.jsx';
 import Portfolio from './Portfolio.jsx';
@@ -19,8 +20,9 @@ import PositionDetail from './PositionDetail.jsx';
 import BuyScreen from './BuyScreen.jsx';
 import SellScreen from './SellScreen.jsx';
 import SearchScreen from './SearchScreen.jsx';
+import ChartScreen from './ChartScreen.jsx';
 
-// Screens: connecting, error, portfolio, detail, buy, sell, search, order-result
+// Screens: connecting, error, portfolio, detail, chart, buy, sell, search, order-result
 export function App({ paperTrading = false }) {
   const { exit } = useApp();
 
@@ -58,7 +60,16 @@ export function App({ paperTrading = false }) {
     error: orderError,
   } = useTrade(getClient, isConnected);
 
+  const {
+    fetchHistorical,
+    getData: getHistoricalData,
+    isLoading: isHistoricalLoading,
+    getError: getHistoricalError,
+    prefetch: prefetchHistorical,
+  } = useHistoricalData(getClient, isConnected);
+
   const [screen, setScreen] = useState('connecting');
+  const [chartPeriod, setChartPeriod] = useState(DEFAULT_PERIOD);
   const [selectedPosition, setSelectedPosition] = useState(null);
   const [buySymbol, setBuySymbol] = useState(null);
   const [sellData, setSellData] = useState(null);
@@ -107,7 +118,29 @@ export function App({ paperTrading = false }) {
     setSelectedPosition(position);
     setScreen('detail');
     fetchPrice(position.symbol).catch(() => {});
-  }, [fetchPrice]);
+    // Prefetch historical data for smooth transition to chart
+    prefetchHistorical(position.symbol, DEFAULT_PERIOD);
+  }, [fetchPrice, prefetchHistorical]);
+
+  const handleChart = useCallback((symbol) => {
+    debug('Navigating to chart for', symbol);
+    setScreen('chart');
+    setChartPeriod(DEFAULT_PERIOD);
+    fetchHistorical(symbol, DEFAULT_PERIOD).catch(() => {});
+  }, [fetchHistorical]);
+
+  const handleChartPeriodChange = useCallback((period) => {
+    debug('Chart period changed to', period);
+    setChartPeriod(period);
+    if (selectedPosition) {
+      fetchHistorical(selectedPosition.symbol, period).catch(() => {});
+    }
+  }, [fetchHistorical, selectedPosition]);
+
+  const handleBackFromChart = useCallback(() => {
+    debug('Going back from chart to detail');
+    setScreen('detail');
+  }, []);
 
   const handleBuy = useCallback((symbol) => {
     setBuySymbol(symbol);
@@ -228,6 +261,19 @@ export function App({ paperTrading = false }) {
           onBuy={handleBuy}
           onSell={handleSell}
           onBack={handleBack}
+          onChart={handleChart}
+        />
+      )}
+
+      {screen === 'chart' && selectedPosition && (
+        <ChartScreen
+          position={selectedPosition}
+          historicalData={getHistoricalData(selectedPosition.symbol, chartPeriod)}
+          loading={isHistoricalLoading(selectedPosition.symbol, chartPeriod)}
+          error={getHistoricalError(selectedPosition.symbol, chartPeriod)}
+          currentPrice={prices[selectedPosition.symbol]?.price}
+          onPeriodChange={handleChartPeriodChange}
+          onBack={handleBackFromChart}
         />
       )}
 

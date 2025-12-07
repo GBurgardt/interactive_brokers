@@ -10,6 +10,7 @@ export function PositionDetail({
   onBuy,
   onSell,
   onBack,
+  onChart,
 }) {
   const { symbol, quantity, avgCost, marketValue } = position;
 
@@ -20,12 +21,17 @@ export function PositionDetail({
   const gainColor = isPositive ? 'green' : 'red';
 
   useInput((input, key) => {
-    if (key.escape) {
+    if (key.escape || key.leftArrow) {
       onBack?.();
+    } else if (key.rightArrow) {
+      onChart?.(symbol);
     } else if (input === 'b') {
       onBuy?.(symbol);
     } else if (input === 's') {
       onSell?.(symbol, quantity);
+    } else if (input === 'h') {
+      // Alternate way to access chart
+      onChart?.(symbol);
     }
   });
 

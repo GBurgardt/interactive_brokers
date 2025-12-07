@@ -11,9 +11,14 @@ const shortcuts = {
     { key: 'q', label: 'Salir' },
   ],
   detail: [
+    { key: '→', label: 'Histórico' },
     { key: 'b', label: 'Comprar' },
     { key: 's', label: 'Vender' },
-    { key: 'Esc', label: 'Volver' },
+    { key: '←', label: 'Volver' },
+  ],
+  chart: [
+    { key: '↑↓', label: 'Período' },
+    { key: '←', label: 'Volver' },
   ],
   buy: [
     { key: 'Enter', label: 'Confirmar' },
