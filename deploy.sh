@@ -76,7 +76,7 @@ log "Verifying integrity..."
 
 REMOTE_HASH_FULL=$(puky bash -c "cd ~/projects/interactive_brokers && git rev-parse HEAD")
 # Trim whitespace
-REMOTE_HASH=$(echo "$REMOTE_HASH_FULL" | xargs)
+REMOTE_HASH=$(echo "$REMOTE_HASH_FULL" | xargs | tr -d '\r')
 
 if [ "$TARGET_HASH" == "$REMOTE_HASH" ]; then
   echo ""
