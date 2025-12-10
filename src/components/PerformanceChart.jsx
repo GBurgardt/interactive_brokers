@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { Box, Text, useStdout } from 'ink';
+import asciichart from 'asciichart';
 import { formatMoney, formatPercent } from '../utils/format.js';
 
 const debug = (...args) => {
@@ -9,21 +10,16 @@ const debug = (...args) => {
 };
 
 /**
- * PerformanceChart - Gráfico de barras con CONTEXTO
+ * PerformanceChart - Gráfico con EJES REALES
  *
- * Filosofía Tufte: "Sparklines get their context from nearby words and numbers"
+ * El usuario necesita:
+ * - Eje Y (izquierda): precios en $ para saber la escala
+ * - Eje X (abajo): fechas distribuidas para saber cuándo pasó cada cosa
+ * - Línea de compra: referencia visual de su precio de entrada
  *
- * El gráfico necesita ANCLAS SEMÁNTICAS:
- * - Eje X: tiempo (fecha compra → hoy)
- * - Eje Y: magnitud (máx ganancia %, mín pérdida %)
- *
- * Sin estas anclas, las barras son arte abstracto.
- * Con ellas, el usuario ENTIENDE de un vistazo.
+ * Usamos asciichart porque ya maneja el eje Y automáticamente.
+ * Agregamos el eje X manualmente con fechas.
  */
-
-const BLOCK_FULL = '█';
-const BLOCK_UPPER = '▀';
-const BLOCK_LOWER = '▄';
 
 /**
  * Parsear fecha IB "20231215" o "20231215 14:30:00" a Date
@@ -38,88 +34,61 @@ function parseIBDate(dateStr) {
 }
 
 /**
- * Formatear fecha en formato corto: "15 sep"
+ * Formatear fecha corta: "15 sep" o "Sep" según el rango
  */
-function formatShortDate(date) {
+function formatAxisDate(date, showDay = true) {
   if (!date) return '';
-  const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-  return `${date.getDate()} ${months[date.getMonth()]}`;
+  const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  if (showDay) {
+    return `${date.getDate()} ${months[date.getMonth()]}`;
+  }
+  return months[date.getMonth()];
 }
 
 /**
- * Renderiza barras ASCII para un array de valores positivos/negativos
+ * Generar el eje X con fechas distribuidas
  */
-function renderBars(values, height, width) {
-  if (!values || values.length === 0) return { lines: [], barWidth: 0 };
+function generateXAxis(dates, chartWidth, yAxisWidth) {
+  if (!dates || dates.length === 0) return '';
 
-  const maxAbs = Math.max(...values.map(Math.abs), 0.01);
-  const halfHeight = Math.floor(height / 2);
+  // Determinar cuántas etiquetas caben (cada etiqueta ~6-8 chars)
+  const labelWidth = 8;
+  const availableWidth = chartWidth;
+  const numLabels = Math.min(5, Math.max(2, Math.floor(availableWidth / (labelWidth + 4))));
 
-  let sampledValues = values;
-  if (values.length > width) {
-    const step = values.length / width;
-    sampledValues = [];
-    for (let i = 0; i < width; i++) {
-      const idx = Math.min(Math.floor(i * step), values.length - 1);
-      sampledValues.push(values[idx]);
-    }
+  // Determinar si mostrar día o solo mes según el rango de tiempo
+  const firstDate = dates[0];
+  const lastDate = dates[dates.length - 1];
+  const daysDiff = Math.floor((lastDate - firstDate) / (1000 * 60 * 60 * 24));
+  const showDay = daysDiff < 60; // Si es menos de 2 meses, mostrar día
+
+  // Seleccionar fechas equidistantes
+  const labels = [];
+  for (let i = 0; i < numLabels; i++) {
+    const idx = Math.floor((i / (numLabels - 1)) * (dates.length - 1));
+    const date = dates[idx];
+    const label = formatAxisDate(date, showDay);
+    const position = Math.floor((i / (numLabels - 1)) * (chartWidth - label.length));
+    labels.push({ label, position });
   }
 
-  debug(`Rendering ${sampledValues.length} bars, maxAbs=${maxAbs.toFixed(2)}, halfHeight=${halfHeight}`);
+  // Construir la línea del eje X
+  const padding = ' '.repeat(yAxisWidth);
+  let axisLine = '';
 
-  const lines = [];
-
-  // Parte superior (positivos)
-  for (let row = 0; row < halfHeight; row++) {
-    let line = '';
-    const threshold = ((halfHeight - row) / halfHeight) * maxAbs;
-    const prevThreshold = ((halfHeight - row + 1) / halfHeight) * maxAbs;
-
-    for (let col = 0; col < sampledValues.length; col++) {
-      const val = sampledValues[col];
-      if (val > 0) {
-        if (val >= prevThreshold) {
-          line += BLOCK_FULL;
-        } else if (val >= threshold) {
-          line += BLOCK_LOWER;
-        } else {
-          line += ' ';
-        }
-      } else {
-        line += ' ';
+  for (let i = 0; i < chartWidth; i++) {
+    let char = ' ';
+    for (const l of labels) {
+      const labelEnd = l.position + l.label.length;
+      if (i >= l.position && i < labelEnd) {
+        char = l.label[i - l.position];
+        break;
       }
     }
-    lines.push({ text: line, color: 'green', isTop: row === 0 });
+    axisLine += char;
   }
 
-  // Eje
-  lines.push({ text: '─'.repeat(sampledValues.length), color: 'gray', isAxis: true });
-
-  // Parte inferior (negativos)
-  for (let row = 0; row < halfHeight; row++) {
-    let line = '';
-    const threshold = ((row + 1) / halfHeight) * maxAbs;
-    const prevThreshold = (row / halfHeight) * maxAbs;
-
-    for (let col = 0; col < sampledValues.length; col++) {
-      const val = sampledValues[col];
-      if (val < 0) {
-        const absVal = Math.abs(val);
-        if (absVal >= threshold) {
-          line += BLOCK_FULL;
-        } else if (absVal > prevThreshold) {
-          line += BLOCK_UPPER;
-        } else {
-          line += ' ';
-        }
-      } else {
-        line += ' ';
-      }
-    }
-    lines.push({ text: line, color: 'red', isBottom: row === halfHeight - 1 });
-  }
-
-  return { lines, barWidth: sampledValues.length };
+  return padding + axisLine;
 }
 
 export function PerformanceChart({
@@ -132,67 +101,99 @@ export function PerformanceChart({
 }) {
   const { stdout } = useStdout();
   const terminalWidth = stdout?.columns || 80;
-  const chartWidth = Math.min(terminalWidth - 20, 80); // Dejamos espacio para labels
+  const chartWidth = Math.min(terminalWidth - 15, 80);
   const chartHeight = 10;
 
-  // Calcular performance y extremos
-  const performanceData = useMemo(() => {
+  // Procesar datos
+  const chartData = useMemo(() => {
     if (!historicalData || historicalData.length === 0 || !avgCost) {
-      debug('No data for performance chart:', { hasHistorical: !!historicalData, avgCost });
+      debug('No data for chart');
       return null;
     }
 
-    // Diferencias respecto al avgCost (en $)
-    const diffs = historicalData.map(bar => bar.close - avgCost);
+    // Extraer precios y fechas
+    const prices = historicalData.map(bar => bar.close);
+    const dates = historicalData.map(bar => parseIBDate(bar.date));
 
-    // Diferencias en % respecto al avgCost
-    const diffPercents = diffs.map(d => (d / avgCost) * 100);
-
-    // Precio actual como último punto
+    // Actualizar último precio si hay currentPrice
     if (currentPrice) {
-      diffs[diffs.length - 1] = currentPrice - avgCost;
-      diffPercents[diffPercents.length - 1] = ((currentPrice - avgCost) / avgCost) * 100;
+      prices[prices.length - 1] = currentPrice;
     }
 
-    const currentDiff = diffs[diffs.length - 1];
-    const totalGain = currentDiff * quantity;
-    const totalGainPercent = (currentDiff / avgCost) * 100;
+    // Samplear si hay demasiados datos
+    let sampledPrices = prices;
+    let sampledDates = dates;
+    if (prices.length > chartWidth) {
+      const step = prices.length / chartWidth;
+      sampledPrices = [];
+      sampledDates = [];
+      for (let i = 0; i < chartWidth; i++) {
+        const idx = Math.min(Math.floor(i * step), prices.length - 1);
+        sampledPrices.push(prices[idx]);
+        sampledDates.push(dates[idx]);
+      }
+    }
 
-    // Extremos históricos
-    const maxPercent = Math.max(...diffPercents);
-    const minPercent = Math.min(...diffPercents);
-    const hasLoss = minPercent < 0;
-    const hasGain = maxPercent > 0;
+    // Calcular ganancia actual
+    const currentPriceVal = sampledPrices[sampledPrices.length - 1];
+    const totalGain = (currentPriceVal - avgCost) * quantity;
+    const totalGainPercent = ((currentPriceVal - avgCost) / avgCost) * 100;
 
-    // Fechas del rango
-    const firstDate = parseIBDate(historicalData[0]?.date);
-    const lastDate = parseIBDate(historicalData[historicalData.length - 1]?.date);
+    // Calcular rango de precios incluyendo avgCost para que la línea de compra sea visible
+    const minPrice = Math.min(...sampledPrices, avgCost);
+    const maxPrice = Math.max(...sampledPrices, avgCost);
 
-    debug(`Performance: gain=${totalGain.toFixed(2)}, max=${maxPercent.toFixed(1)}%, min=${minPercent.toFixed(1)}%`);
+    debug(`Chart: ${sampledPrices.length} points, min=$${minPrice.toFixed(2)}, max=$${maxPrice.toFixed(2)}, avgCost=$${avgCost.toFixed(2)}`);
 
     return {
-      diffs,
-      diffPercents,
+      prices: sampledPrices,
+      dates: sampledDates,
       totalGain,
       totalGainPercent,
-      maxPercent,
-      minPercent,
-      hasLoss,
-      hasGain,
-      firstDate,
-      lastDate,
       isPositive: totalGain >= 0,
+      minPrice,
+      maxPrice,
     };
-  }, [historicalData, avgCost, quantity, currentPrice]);
+  }, [historicalData, avgCost, quantity, currentPrice, chartWidth]);
 
-  // Renderizar barras
-  const { lines: chartLines, barWidth } = useMemo(() => {
-    if (!performanceData) return { lines: [], barWidth: 0 };
-    return renderBars(performanceData.diffs, chartHeight, chartWidth);
-  }, [performanceData, chartHeight, chartWidth]);
+  // Renderizar gráfico con asciichart
+  const { chartRender, yAxisWidth } = useMemo(() => {
+    if (!chartData) return { chartRender: null, yAxisWidth: 0 };
+
+    const isPositive = chartData.isPositive;
+    const color = isPositive ? asciichart.green : asciichart.red;
+
+    try {
+      // Crear el gráfico principal (precio)
+      const chart = asciichart.plot(chartData.prices, {
+        height: chartHeight,
+        colors: [color],
+        format: (x) => {
+          // Formato del eje Y: $XXX
+          return ('$' + x.toFixed(0)).padStart(6);
+        },
+      });
+
+      // Calcular el ancho del eje Y (los primeros caracteres antes del gráfico)
+      // asciichart usa formato: "  $XXX ┤" que son ~8 caracteres
+      const yAxisWidth = 8;
+
+      debug('Chart rendered successfully');
+      return { chartRender: chart, yAxisWidth };
+    } catch (err) {
+      debug('Chart render error:', err.message);
+      return { chartRender: null, yAxisWidth: 0 };
+    }
+  }, [chartData, chartHeight]);
+
+  // Generar eje X con fechas
+  const xAxisLine = useMemo(() => {
+    if (!chartData) return '';
+    return generateXAxis(chartData.dates, chartData.prices.length, 8);
+  }, [chartData]);
 
   // Si no hay datos
-  if (!performanceData || chartLines.length === 0) {
+  if (!chartData || !chartRender) {
     return (
       <Box flexDirection="column">
         <Text color="white" bold>{symbol}</Text>
@@ -201,35 +202,13 @@ export function PerformanceChart({
     );
   }
 
-  const {
-    totalGain,
-    totalGainPercent,
-    maxPercent,
-    minPercent,
-    hasLoss,
-    hasGain,
-    firstDate,
-    lastDate,
-    isPositive,
-  } = performanceData;
-
+  const { totalGain, totalGainPercent, isPositive } = chartData;
   const gainColor = isPositive ? 'green' : 'red';
   const gainSign = isPositive ? '+' : '';
 
-  // Formatear labels de escala Y
-  const maxLabel = hasGain ? `+${maxPercent.toFixed(0)}%` : '';
-  const minLabel = hasLoss ? `${minPercent.toFixed(0)}%` : '';
-
-  // Formatear fechas para eje X
-  const startDateLabel = firstDate ? formatShortDate(firstDate) : '';
-  const endDateLabel = 'hoy';
-
-  // Calcular padding para alinear labels a la derecha del gráfico
-  const rightPadding = Math.max(0, barWidth - 6); // 6 chars aprox para "+XX%"
-
   return (
     <Box flexDirection="column">
-      {/* Header: GOOG  +$2,733.63 +56.22% */}
+      {/* Header: TSLA  +$6,455.79 +31.76% */}
       <Box marginBottom={1}>
         <Text color="white" bold>{symbol}</Text>
         <Text>  </Text>
@@ -238,39 +217,21 @@ export function PerformanceChart({
         </Text>
       </Box>
 
-      {/* Escala Y superior: máximo histórico */}
-      {hasGain && (
-        <Box>
-          <Text color="gray">{' '.repeat(rightPadding)}</Text>
-          <Text color="green">{maxLabel}</Text>
-        </Box>
-      )}
-
-      {/* Gráfico de barras */}
+      {/* Gráfico con eje Y (asciichart lo incluye) */}
       <Box flexDirection="column">
-        {chartLines.map((line, idx) => (
-          <Text key={idx} color={line.color}>
-            {line.text}
-          </Text>
-        ))}
+        <Text>{chartRender}</Text>
       </Box>
 
-      {/* Escala Y inferior: mínimo histórico (solo si hubo pérdida) */}
-      {hasLoss && (
-        <Box>
-          <Text color="gray">{' '.repeat(rightPadding)}</Text>
-          <Text color="red">{minLabel}</Text>
-        </Box>
-      )}
+      {/* Línea de referencia de compra */}
+      <Box>
+        <Text color="gray">{'─'.repeat(8)}</Text>
+        <Text color="yellow"> compra ${avgCost.toFixed(0)} </Text>
+        <Text color="gray">{'─'.repeat(Math.max(0, chartData.prices.length - 20))}</Text>
+      </Box>
 
-      {/* Eje X: fechas + precio de compra */}
-      <Box marginTop={1}>
-        <Text color="gray">{startDateLabel}</Text>
-        <Text color="gray">{' '.repeat(Math.max(0, barWidth - startDateLabel.length - endDateLabel.length - 12))}</Text>
-        <Text color="white">{endDateLabel}</Text>
-        <Text color="gray">   </Text>
-        <Text color="gray">compra </Text>
-        <Text color="white">{formatMoney(avgCost)}</Text>
+      {/* Eje X con fechas */}
+      <Box>
+        <Text color="gray">{xAxisLine}</Text>
       </Box>
     </Box>
   );
