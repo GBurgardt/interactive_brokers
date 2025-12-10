@@ -85,8 +85,8 @@ if [ "$TARGET_HASH" == "$REMOTE_HASH" ]; then
   echo -e "${BOLD}  Commit : ${TARGET_HASH:0:7}${RESET}"
 else
   echo ""
-  error "Mismatch detected."
-  echo -e "  Local  : ${TARGET_HASH:0:7}"
-  echo -e "  Remote : ${REMOTE_HASH:0:7}"
+  echo -e "${RED}${BOLD}✕ Mismatch detected.${RESET}"
+  echo -e "  Local  : '${TARGET_HASH}'"
+  echo -e "  Remote : '${REMOTE_HASH}'"
   exit 1
 fi
