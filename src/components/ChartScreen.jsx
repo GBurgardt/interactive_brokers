@@ -3,7 +3,6 @@ import { Box, Text, useInput, useStdout } from 'ink';
 import asciichart from 'asciichart';
 import { formatMoney, formatPercent } from '../utils/format.js';
 import { PERIODS, PERIOD_KEYS, DEFAULT_PERIOD } from '../hooks/useHistoricalData.js';
-import PerformanceChart from './PerformanceChart.jsx';
 
 const debug = (...args) => {
   if (process.argv.includes('--debug')) {
@@ -141,70 +140,50 @@ export function ChartScreen({
   loading,
   error,
   currentPrice,
-  purchaseDate, // Timestamp of first purchase (for performance view)
+  purchaseDate, // Timestamp of first purchase (not used but kept for API compatibility)
   onPeriodChange,
   onBuy,
   onSell,
   onBack,
 }) {
   const [selectedPeriod, setSelectedPeriod] = useState(DEFAULT_PERIOD);
-  const [viewMode, setViewMode] = useState('auto'); // 'auto', 'performance', 'price'
   const { stdout } = useStdout();
 
   // Extract data from position if available
   const avgCost = position?.avgCost;
   const quantity = position?.quantity;
-  const owned = !!position;
-
-  // Determine which view to show
-  // If user owns the stock, default to performance view
-  // 'p' key toggles to price view
-  const showPerformance = useMemo(() => {
-    if (viewMode === 'price') return false;
-    if (viewMode === 'performance') return true;
-    // Auto mode: show performance if owned
-    return owned && avgCost > 0;
-  }, [viewMode, owned, avgCost]);
+  const owned = !!position && avgCost > 0;
 
   // Get terminal width for chart sizing
   const terminalWidth = stdout?.columns || 80;
   const chartWidth = Math.min(terminalWidth - 15, 100);
 
-  debug(`ChartScreen render: symbol=${symbol} owned=${owned} showPerformance=${showPerformance} period=${selectedPeriod}`);
+  debug(`ChartScreen render: symbol=${symbol} owned=${owned} period=${selectedPeriod}`);
 
-  // Handle period change - only for price view
+  // Handle period change - ALWAYS (unified behavior)
   useEffect(() => {
-    if (!showPerformance) {
-      debug(`Period changed to ${selectedPeriod}, calling onPeriodChange`);
-      onPeriodChange?.(selectedPeriod);
-    }
-  }, [selectedPeriod, onPeriodChange, showPerformance]);
+    debug(`Period changed to ${selectedPeriod}, calling onPeriodChange`);
+    onPeriodChange?.(selectedPeriod);
+  }, [selectedPeriod, onPeriodChange]);
 
-  // Input handling
+  // Input handling - UNIFIED (no toggle, arrows always work)
   useInput((input, key) => {
     if (key.escape) {
       debug('Back navigation triggered');
       onBack?.();
-    } else if (key.upArrow && !showPerformance) {
-      // More time (zoom out) - only in price view
+    } else if (key.upArrow) {
+      // More time (zoom out)
       const currentIndex = PERIOD_KEYS.indexOf(selectedPeriod);
       if (currentIndex < PERIOD_KEYS.length - 1) {
+        debug(`Period up: ${selectedPeriod} -> ${PERIOD_KEYS[currentIndex + 1]}`);
         setSelectedPeriod(PERIOD_KEYS[currentIndex + 1]);
       }
-    } else if (key.downArrow && !showPerformance) {
-      // Less time (zoom in) - only in price view
+    } else if (key.downArrow) {
+      // Less time (zoom in)
       const currentIndex = PERIOD_KEYS.indexOf(selectedPeriod);
       if (currentIndex > 0) {
+        debug(`Period down: ${selectedPeriod} -> ${PERIOD_KEYS[currentIndex - 1]}`);
         setSelectedPeriod(PERIOD_KEYS[currentIndex - 1]);
-      }
-    } else if (input === 'p' && owned) {
-      // Toggle between performance and price view
-      if (showPerformance) {
-        debug('Switching to price view');
-        setViewMode('price');
-      } else {
-        debug('Switching to performance view');
-        setViewMode('performance');
       }
     } else if (input === 'b') {
       debug('Buy triggered for', symbol);
@@ -261,11 +240,20 @@ export function ChartScreen({
   }, [historicalData, currentPrice, chartWidth]);
 
   // Render price chart
+  // Color based on: if owned -> gain/loss from purchase, else -> period change
   const chartRender = useMemo(() => {
     if (!chartData) return null;
 
-    const isPositive = chartData.change >= 0;
-    const color = isPositive ? asciichart.green : asciichart.red;
+    // Determine chart color based on ownership
+    let isChartPositive;
+    if (owned && avgCost && chartData.last) {
+      // Owned: color based on gain from purchase
+      isChartPositive = chartData.last >= avgCost;
+    } else {
+      // Not owned: color based on period change
+      isChartPositive = chartData.change >= 0;
+    }
+    const color = isChartPositive ? asciichart.green : asciichart.red;
 
     try {
       const chart = asciichart.plot(chartData.prices, {
@@ -274,13 +262,13 @@ export function ChartScreen({
         format: (x) => formatMoney(x).padStart(10),
       });
 
-      debug('Chart rendered successfully');
+      debug(`Chart rendered: positive=${isChartPositive}, owned=${owned}`);
       return chart;
     } catch (err) {
       debug('Chart render error:', err.message);
       return null;
     }
-  }, [chartData]);
+  }, [chartData, owned, avgCost]);
 
   // Generate X axis
   const xAxisData = useMemo(() => {
@@ -326,41 +314,7 @@ export function ChartScreen({
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // PERFORMANCE VIEW - When user owns the stock
-  // ═══════════════════════════════════════════════════════════════
-  if (showPerformance) {
-    return (
-      <Box flexDirection="column" padding={1}>
-        <PerformanceChart
-          symbol={symbol}
-          historicalData={historicalData}
-          avgCost={avgCost}
-          quantity={quantity}
-          purchaseDate={purchaseDate}
-          currentPrice={currentPrice}
-        />
-
-        {/* Footer: subtle */}
-        <Box marginTop={1} justifyContent="space-between">
-          <Box>
-            <Text color="gray">p </Text>
-            <Text color="white">precio</Text>
-          </Box>
-          <Box>
-            <Text color="gray">b </Text>
-            <Text color="white">comprar</Text>
-            <Text color="gray">   s </Text>
-            <Text color="white">vender</Text>
-          </Box>
-        </Box>
-      </Box>
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // PRICE VIEW - Traditional price chart
-  // ═══════════════════════════════════════════════════════════════
+  // No chart data
   if (!chartData || !chartRender) {
     return (
       <Box flexDirection="column" padding={1}>
@@ -372,43 +326,73 @@ export function ChartScreen({
     );
   }
 
-  const isPositive = chartData.change >= 0;
-  const changeColor = isPositive ? 'green' : 'red';
-  const changeArrow = isPositive ? '▲' : '▼';
+  // ═══════════════════════════════════════════════════════════════
+  // UNIFIED CHART VIEW
+  // - If owned: header shows total gain from purchase, includes buy line
+  // - If not owned: header shows period change
+  // - Arrows ↑↓ ALWAYS change period
+  // ═══════════════════════════════════════════════════════════════
+
+  // Calculate gain if owned
+  let totalGain = 0;
+  let totalGainPercent = 0;
+  if (owned && displayPrice && avgCost) {
+    totalGain = (displayPrice - avgCost) * quantity;
+    totalGainPercent = ((displayPrice - avgCost) / avgCost) * 100;
+    debug(`Owner gain: $${totalGain.toFixed(2)} (${totalGainPercent.toFixed(2)}%)`);
+  }
+
+  // Determine colors and display values based on ownership
+  const isPositive = owned ? totalGain >= 0 : chartData.change >= 0;
+  const displayColor = isPositive ? 'green' : 'red';
+  const displayArrow = isPositive ? '▲' : '▼';
+  const displaySign = isPositive ? '+' : '';
 
   return (
     <Box flexDirection="column" padding={1}>
-      {/* Header: Symbol on left, Price + Change on right */}
+      {/* Header: Symbol on left, Gain/Change on right */}
       <Box justifyContent="space-between" marginBottom={1}>
         <Text bold color="white">{symbol}</Text>
         <Box>
-          <Text bold color="white">{formatMoney(displayPrice)}</Text>
-          <Text color={changeColor}> {changeArrow} {formatPercent(Math.abs(chartData.changePercent))}</Text>
+          {owned ? (
+            // Show total gain from purchase
+            <Text color={displayColor} bold>
+              {displaySign}{formatMoney(totalGain)} {displayArrow} {formatPercent(Math.abs(totalGainPercent))}
+            </Text>
+          ) : (
+            // Show period change
+            <>
+              <Text bold color="white">{formatMoney(displayPrice)}</Text>
+              <Text color={displayColor}> {displayArrow} {formatPercent(Math.abs(chartData.changePercent))}</Text>
+            </>
+          )}
         </Box>
       </Box>
 
-      {/* Chart - no border, clean */}
+      {/* Chart */}
       <Box flexDirection="column">
         <Text>{chartRender}</Text>
+
+        {/* Purchase price reference line - only if owned */}
+        {owned && avgCost && (
+          <Box>
+            <Text color="gray">{'─'.repeat(8)}</Text>
+            <Text color="yellow"> compra {formatMoney(avgCost)} </Text>
+            <Text color="gray">{'─'.repeat(Math.max(0, chartWidth - 25))}</Text>
+          </Box>
+        )}
 
         {/* X Axis with dates */}
         <Text color="gray">{xAxisData.axisLine}</Text>
       </Box>
 
-      {/* Footer: Period on left, Actions on right - subtle */}
+      {/* Footer: Period on left, Actions on right */}
       <Box marginTop={1} justifyContent="space-between">
         <Box>
           <Text color="white">{PERIODS[selectedPeriod].label}</Text>
           <Text color="gray">  ↑↓</Text>
         </Box>
         <Box>
-          {owned && (
-            <>
-              <Text color="gray">p </Text>
-              <Text color="white">mi inversión</Text>
-              <Text>   </Text>
-            </>
-          )}
           <Text color="gray">b </Text>
           <Text color="white">comprar</Text>
           {owned && (
