@@ -65,7 +65,7 @@ REMOTE_CMD="cd ~/projects/interactive_brokers && \
 git fetch origin master --quiet && \
 git reset --hard origin/master --quiet"
 
-if puky bash -c "$REMOTE_CMD"; then
+if puky bash -c "$REMOTE_CMD" > /dev/null 2>&1; then
   success "Remote repository updated."
 else
   error "Remote update failed."
@@ -74,7 +74,7 @@ fi
 # 3. Integrity Verification
 log "Verifying integrity..."
 
-REMOTE_HASH_FULL=$(puky bash -c "cd ~/projects/interactive_brokers && git rev-parse HEAD")
+REMOTE_HASH_FULL=$(puky bash -c "cd ~/projects/interactive_brokers && git rev-parse HEAD" 2>/dev/null)
 # Trim whitespace
 REMOTE_HASH=$(echo "$REMOTE_HASH_FULL" | xargs | tr -d '\r')
 
