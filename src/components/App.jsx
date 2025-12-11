@@ -519,7 +519,10 @@ export function App({ paperTrading = false }) {
 
       {screen === 'search' && (
         <SearchScreen
+          positions={positions}
+          executions={executions}
           onViewChart={handleViewChart}
+          onBuy={handleBuy}
           onCancel={navigateBack}
         />
       )}
