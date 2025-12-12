@@ -40,6 +40,7 @@ if (showHelp) {
     b          Comprar
     s          Vender (en detalle)
     /          Buscar símbolo
+    g          Reporte de portafolio
     r          Refrescar datos
     Esc        Volver
     q          Salir

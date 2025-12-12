@@ -1,129 +1,171 @@
-import {
-  createCliRenderer,
-  TextRenderable,
-  BoxRenderable,
-  SelectRenderable,
-  SelectRenderableEvents
-} from "@opentui/core"
+#!/usr/bin/env bun
+/**
+ * FOLIO TUI - Interactive Brokers Portfolio Manager
+ *
+ * Built with OpenTUI for that cyberpunk terminal aesthetic.
+ */
 
-console.log("[FOLIO-TUI] Iniciando aplicación...")
+import 'dotenv/config';
+import { App } from './app/App';
+import { UIRenderer } from './ui/Renderer';
+
+// Parse arguments
+const args = process.argv.slice(2);
+const paperTrading = args.includes('--paper') || args.includes('-p');
+const showHelp = args.includes('--help') || args.includes('-h');
+const debugMode = args.includes('--debug') || args.includes('-d');
+
+// Export debug mode globally
+(global as any).DEBUG_MODE = debugMode;
+
+function debug(...args: any[]) {
+  if (debugMode) {
+    const timestamp = new Date().toISOString().split('T')[1].slice(0, -1);
+    console.log(`[${timestamp}] [DEBUG]`, ...args);
+  }
+}
+(global as any).debug = debug;
+
+if (showHelp) {
+  console.log(`
+  Folio TUI - Interactive Brokers Portfolio Manager
+
+  Usage:
+    bun start              Conectar a cuenta REAL (puerto 7496)
+    bun start -- --paper   Conectar a cuenta PAPER (puerto 7497)
+
+  Opciones:
+    --paper, -p    Usar paper trading (puerto 7497)
+    --debug, -d    Modo debug con logs detallados
+    --help, -h     Mostrar esta ayuda
+
+  Navegación:
+    ↑↓         Navegar posiciones
+    Enter      Ver detalle de posición
+    b          Comprar
+    s          Vender (en detalle)
+    /          Buscar símbolo
+    r          Refrescar datos
+    Esc        Volver
+    q          Salir
+
+  Requisitos:
+    - TWS o IB Gateway abierto
+    - API habilitada en Settings > API
+    - Puerto 7496 (live) o 7497 (paper)
+  `);
+  process.exit(0);
+}
+
+// Check if terminal supports interactive mode
+if (!process.stdin.isTTY) {
+  console.log(`
+  Este CLI necesita ejecutarse en una terminal interactiva.
+
+  Ejecutá directamente:
+    bun run src/index.ts
+
+  O:
+    bun start
+  `);
+  process.exit(1);
+}
+
+console.log('[FOLIO-TUI] Iniciando aplicación...');
+console.log('[FOLIO-TUI] Paper trading:', paperTrading ? 'SÍ (puerto 7497)' : 'NO (puerto 7496)');
 
 async function main() {
-  console.log("[FOLIO-TUI] Creando renderer...")
+  // Import createCliRenderer directly to test
+  const { createCliRenderer, TextRenderable, BoxRenderable, SelectRenderable, SelectRenderableEvents } = await import("@opentui/core");
+
+  console.log('[FOLIO-TUI] Creando renderer primero...');
 
   const renderer = await createCliRenderer({
-    consoleOptions: {
-      sizePercent: 20,
-    }
-  })
+    exitOnCtrlC: false,
+    targetFps: 60,
+  });
 
-  console.log("[FOLIO-TUI] Renderer creado exitosamente")
+  console.log('[FOLIO-TUI] Renderer creado!');
+  console.log('[FOLIO-TUI] Screen:', renderer.width, 'x', renderer.height);
 
-  // Caja principal del encabezado
+  // Simple UI
   const header = new BoxRenderable(renderer, {
-    id: "header",
-    width: "100%",
-    height: 3,
-    backgroundColor: "#1a1a2e",
-    borderStyle: "single",
-    borderColor: "#4a9eff",
-    position: "absolute",
-    left: 0,
+    id: 'header',
+    width: renderer.width - 2,
+    height: 4,
+    backgroundColor: '#1a1a2e',
+    borderStyle: 'round',
+    borderColor: '#4a9eff',
+    position: 'absolute',
+    left: 1,
     top: 0,
-  })
+  });
 
-  // Título
   const title = new TextRenderable(renderer, {
-    id: "title",
-    content: "  FOLIO TUI - Interactive Brokers Portfolio Manager",
-    fg: "#4a9eff",
-    position: "absolute",
+    id: 'title',
+    content: '  FOLIO TUI - Conectando a TWS...',
+    fg: '#ffffff',
+    position: 'absolute',
     left: 2,
     top: 1,
-  })
+  });
 
-  // Menú principal
-  const menu = new SelectRenderable(renderer, {
-    id: "main-menu",
-    width: 40,
-    height: 12,
-    options: [
-      { name: "Portfolio", description: "Ver posiciones actuales" },
-      { name: "Orders", description: "Gestionar órdenes" },
-      { name: "Market Data", description: "Datos de mercado en tiempo real" },
-      { name: "Trading Bot", description: "Configurar bot de trading" },
-      { name: "Settings", description: "Configuración de conexión" },
-      { name: "Exit", description: "Salir de la aplicación" },
-    ],
-    position: "absolute",
-    left: 2,
-    top: 5,
-    selectedColor: "#4a9eff",
-    unselectedColor: "#666666",
-  })
-
-  // Descripción del item seleccionado
-  const description = new TextRenderable(renderer, {
-    id: "description",
-    content: "Usa ↑↓ para navegar, Enter para seleccionar",
-    fg: "#888888",
-    position: "absolute",
-    left: 2,
-    top: 18,
-  })
-
-  // Status bar
-  const statusBar = new TextRenderable(renderer, {
-    id: "status",
-    content: " [TWS: Desconectado] | Presiona 'q' para salir | '~' para consola",
-    fg: "#666666",
-    position: "absolute",
+  const status = new TextRenderable(renderer, {
+    id: 'status',
+    content: ' [q] Salir',
+    fg: '#888888',
+    position: 'absolute',
     left: 0,
     top: renderer.height - 1,
-  })
+  });
 
-  // Agregar elementos al root
-  renderer.root.add(header)
-  renderer.root.add(title)
-  renderer.root.add(menu)
-  renderer.root.add(description)
-  renderer.root.add(statusBar)
+  renderer.root.add(header);
+  renderer.root.add(title);
+  renderer.root.add(status);
 
-  console.log("[FOLIO-TUI] Elementos UI agregados")
+  console.log('[FOLIO-TUI] UI básica lista');
 
-  // Manejar selección del menú
-  menu.on(SelectRenderableEvents.ITEM_SELECTED, (index, option) => {
-    console.log(`[FOLIO-TUI] Seleccionado: ${option.name}`)
+  // Now create app
+  console.log('[FOLIO-TUI] Creando App...');
+  const app = new App({ paperTrading });
 
-    if (option.name === "Exit") {
-      console.log("[FOLIO-TUI] Saliendo...")
-      renderer.stop()
-      process.exit(0)
+  // Update UI on state change
+  app.on('stateChange', () => {
+    const state = app.state;
+    if (state.connectionStatus === 'connected') {
+      title.content = `  FOLIO TUI - Conectado | ${state.accountId || ''}`;
+      title.fg = '#00ff00';
+    } else if (state.connectionStatus === 'error') {
+      title.content = `  ERROR: ${state.connectionError}`;
+      title.fg = '#ff4444';
     }
+  });
 
-    // Por ahora solo mostramos mensaje
-    description.content = `Seleccionaste: ${option.name} - ${option.description}`
-  })
+  app.on('quit', () => {
+    renderer.stop();
+    process.exit(0);
+  });
 
-  // Manejar teclas
-  renderer.keyInput.on("keypress", (key) => {
-    console.log(`[FOLIO-TUI] Tecla presionada: ${key.name}`)
-
-    if (key.name === "q" || (key.ctrl && key.name === "c")) {
-      console.log("[FOLIO-TUI] Saliendo por tecla...")
-      renderer.stop()
-      process.exit(0)
+  // Keyboard
+  renderer.keyInput.on('keypress', (key: any) => {
+    if (key.name === 'q' || (key.ctrl && key.name === 'c')) {
+      renderer.stop();
+      process.exit(0);
     }
-  })
+    if (key.name === 'r' && app.state.screen === 'error') {
+      app.retry();
+    }
+  });
 
-  // Focus en el menú
-  menu.focus()
+  console.log('[FOLIO-TUI] Conectando a IB...');
 
-  console.log("[FOLIO-TUI] Iniciando render loop...")
-  renderer.start()
+  // Connect after a small delay
+  setTimeout(() => {
+    app.connect();
+  }, 500);
 }
 
 main().catch((err) => {
-  console.error("[FOLIO-TUI] Error fatal:", err)
-  process.exit(1)
-})
+  console.error('[FOLIO-TUI] Error fatal:', err);
+  process.exit(1);
+});

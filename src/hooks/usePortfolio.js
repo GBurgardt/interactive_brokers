@@ -158,9 +158,14 @@ export function usePortfolio(getClient, isConnected, accountId) {
 
     // Use reqAccountUpdates instead of reqPositions - this gives us marketPrice!
     if (accountId) {
-      debug('Requesting account updates for:', accountId);
-      client.reqAccountUpdates(true, accountId);
-      subscribedRef.current = true;
+      // Subscribe only once; repeated calls are unnecessary and can add churn.
+      if (!subscribedRef.current) {
+        debug('Requesting account updates for:', accountId);
+        client.reqAccountUpdates(true, accountId);
+        subscribedRef.current = true;
+      } else {
+        debug('Account updates already subscribed');
+      }
     } else {
       debug('No accountId, falling back to reqPositions');
       // Fallback to reqPositions if no accountId
@@ -205,6 +210,13 @@ export function usePortfolio(getClient, isConnected, accountId) {
       fetchPortfolio();
     }
   }, [isConnected, fetchPortfolio]);
+
+  // Reset subscription flag on disconnect so we can resubscribe cleanly.
+  useEffect(() => {
+    if (!isConnected) {
+      subscribedRef.current = false;
+    }
+  }, [isConnected]);
 
   const totalInvested = positions.reduce((sum, p) => sum + p.marketValue, 0);
   const totalGain = accountData.netLiquidation - totalInvested - accountData.totalCashValue;

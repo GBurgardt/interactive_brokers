@@ -15,6 +15,7 @@ export function Portfolio({
   onViewChart,
   onBuy,
   onSearch,
+  onReport,
   onActivity,
   onOrders,
   onRefresh,
@@ -26,8 +27,6 @@ export function Portfolio({
   const totalItems = positions.length + 1;
 
   useInput((input, key) => {
-    if (loading) return;
-
     if (key.upArrow) {
       setSelectedIndex(prev => Math.max(0, prev - 1));
     } else if (key.downArrow) {
@@ -46,6 +45,8 @@ export function Portfolio({
       }
     } else if (input === '/') {
       onSearch?.();
+    } else if (input === 'g') {
+      onReport?.();
     } else if (input === 'a') {
       onActivity?.();
     } else if (input === 'o') {

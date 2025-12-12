@@ -7,6 +7,7 @@ const shortcuts = {
     { key: 'Enter', label: 'Detalles' },
     { key: 'b', label: 'Comprar' },
     { key: '/', label: 'Buscar' },
+    { key: 'g', label: 'Reporte' },
     { key: 'a', label: 'Actividad' },
     { key: 'o', label: 'Órdenes', showBadge: true },
     { key: 'q', label: 'Salir' },

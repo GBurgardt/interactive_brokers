@@ -63,11 +63,13 @@ import SearchScreen from './SearchScreen.jsx';
 import ChartScreen from './ChartScreen.jsx';
 import ActivityScreen from './ActivityScreen.jsx';
 import OrdersScreen from './OrdersScreen.jsx';
+import PortfolioReportScreen from './PortfolioReportScreen.jsx';
 import Breadcrumb from './Breadcrumb.jsx';
 
 // Screen name translations for breadcrumb and back button
 const SCREEN_NAMES = {
   portfolio: 'inicio',
+  report: 'reporte',
   chart: 'gráfico',
   buy: 'comprar',
   sell: 'vender',
@@ -182,6 +184,7 @@ export function App({ paperTrading = false }) {
   const [buySymbol, setBuySymbol] = useState(null);
   const [sellData, setSellData] = useState(null);
   const [lastOrderResult, setLastOrderResult] = useState(null);
+  const [portfolioHistory, setPortfolioHistory] = useState([]);
 
   // Conectar al iniciar - SOLO UNA VEZ
   const hasConnectedRef = React.useRef(false);
@@ -232,6 +235,47 @@ export function App({ paperTrading = false }) {
       });
     }
   }, [isConnected, pendingOrders, fetchPrice, fetchHistorical, chartPeriod]);
+
+  // Auto-refresh suave: mantener el "pulso" sin pedirlo (30s)
+  useEffect(() => {
+    if (!isConnected) return;
+    const id = setInterval(() => {
+      refreshPortfolio();
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [isConnected, refreshPortfolio]);
+
+  // Auto-refresh de actividad para hitos (60s)
+  useEffect(() => {
+    if (!isConnected) return;
+    const id = setInterval(() => {
+      refreshExecutions();
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [isConnected, refreshExecutions]);
+
+  // Guardar historial de portafolio (sesión) para el reporte.
+  useEffect(() => {
+    if (!isConnected) return;
+    const net = accountData?.netLiquidation;
+    const cash = computed?.cash;
+    if (!Number.isFinite(net) || net <= 0) return;
+
+    const now = Date.now();
+    setPortfolioHistory(prev => {
+      const last = prev[prev.length - 1];
+      if (last) {
+        // Evitar puntos demasiado seguidos.
+        if (now - last.ts < 5_000) return prev;
+        // Evitar duplicados (mismo valor).
+        if (Math.abs(last.netLiquidation - net) < 0.01 && Math.abs(last.cash - cash) < 0.01) return prev;
+      }
+      const next = [...prev, { ts: now, netLiquidation: net, cash: Number.isFinite(cash) ? cash : 0 }];
+      // Limitar tamaño para no crecer indefinidamente.
+      if (next.length > 2000) next.splice(0, next.length - 2000);
+      return next;
+    });
+  }, [isConnected, accountData?.netLiquidation, computed?.cash]);
 
   // Calculate effective cash (total cash minus reserved by pending BUY orders)
   const reservedCash = useMemo(() => {
@@ -337,6 +381,11 @@ export function App({ paperTrading = false }) {
     navigateTo('activity');
   }, [refreshExecutions, navigateTo]);
 
+  const handleReport = useCallback(() => {
+    debug('Opening portfolio report');
+    navigateTo('report');
+  }, [navigateTo]);
+
   // Orders screen handlers
   const handleOrders = useCallback(() => {
     debug('Opening orders screen');
@@ -422,10 +471,19 @@ export function App({ paperTrading = false }) {
           onViewChart={handleViewChart}
           onBuy={handleBuy}
           onSearch={handleSearch}
+          onReport={handleReport}
           onActivity={handleActivity}
           onOrders={handleOrders}
           onRefresh={handleRefresh}
           onQuit={handleQuit}
+        />
+      )}
+
+      {screen === 'report' && (
+        <PortfolioReportScreen
+          history={portfolioHistory}
+          executions={executions}
+          onBack={navigateBack}
         />
       )}
 
