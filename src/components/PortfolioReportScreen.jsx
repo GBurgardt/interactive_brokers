@@ -223,7 +223,10 @@ export function PortfolioReportScreen({
   const terminalHeight = stdout?.rows || 24;
   const innerWidth = Math.max(0, terminalWidth - 2); // padding={1} left+right
   const chartWidth = Math.max(20, innerWidth - Y_AXIS_PADDING);
-  const chartHeight = Math.max(10, terminalHeight - 7);
+
+  // Chart height: elegant proportions, max 16 lines
+  const availableHeight = terminalHeight - 9; // header(2) + context(1) + xaxis(2) + footer(2) + margins(2)
+  const chartHeight = Math.min(16, Math.max(10, availableHeight));
 
   // Unified input: Esc back, ↑↓ zoom
   useInput((input, key) => {
@@ -342,33 +345,47 @@ export function PortfolioReportScreen({
   const isPositive = chartData.change >= 0;
   const displayColor = isPositive ? 'green' : 'red';
   const displayArrow = isPositive ? '▲' : '▼';
+  const displaySign = isPositive ? '+' : '';
+
+  // Min/max for context
+  const minValue = Math.min(...sampled.values);
+  const maxValue = Math.max(...sampled.values);
 
   return (
     <Box flexDirection="column" padding={1}>
-      {/* Header */}
-      <Box justifyContent="space-between" marginBottom={1}>
-        <Text bold color="white">portafolio</Text>
-        <Text color={displayColor} bold>
-          {formatMoney(chartData.last)} {displayArrow} {formatPercent(Math.abs(chartData.changePercent))}
-        </Text>
+      {/* ═══ HEADER: Title + Value + Change ═══ */}
+      <Box justifyContent="space-between">
+        <Box>
+          <Text bold color="white">portafolio</Text>
+          <Text color="gray">  </Text>
+          <Text bold color="white">{formatMoney(chartData.last)}</Text>
+        </Box>
+        <Box>
+          <Text color={displayColor}>
+            {displayArrow} {displaySign}{formatMoney(Math.abs(chartData.change))} ({formatPercent(Math.abs(chartData.changePercent))})
+          </Text>
+        </Box>
       </Box>
 
-      {/* Chart */}
-      <Box flexDirection="column">
+      {/* ═══ CONTEXT LINE: Range + Period ═══ */}
+      <Box justifyContent="space-between" marginBottom={0}>
+        <Text color="gray">
+          rango: {formatMoney(minValue)} — {formatMoney(maxValue)}
+        </Text>
+        <Text color="gray">{PORTFOLIO_PERIODS[selectedPeriod].label}</Text>
+      </Box>
+
+      {/* ═══ CHART ═══ */}
+      <Box flexDirection="column" marginTop={1}>
         <Text>{chartWithMarks}</Text>
         <Text color="gray">{xAxis.ticksLine}</Text>
         <Text color="gray">{xAxis.labelsLine}</Text>
       </Box>
 
-      {/* Footer */}
+      {/* ═══ FOOTER: Controls + Legend ═══ */}
       <Box marginTop={1} justifyContent="space-between">
-        <Box>
-          <Text color="white">{PORTFOLIO_PERIODS[selectedPeriod].label}</Text>
-          <Text color="gray">  ↑↓</Text>
-        </Box>
-        <Box>
-          <Text color="gray">▲ ingreso  ▼ egreso</Text>
-        </Box>
+        <Text color="gray">↑↓ período</Text>
+        <Text color="gray">▲ ingreso  ▼ egreso</Text>
       </Box>
     </Box>
   );

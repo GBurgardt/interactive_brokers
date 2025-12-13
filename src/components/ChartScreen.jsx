@@ -183,8 +183,12 @@ export function ChartScreen({
   const terminalHeight = stdout?.rows || 24;
   const innerWidth = Math.max(0, terminalWidth - 2); // padding={1} left+right
   const chartWidth = Math.max(20, innerWidth - Y_AXIS_PADDING);
-  const chromeHeight = owned ? 8 : 7; // padding + header + gaps + x-axis + footer
-  const chartHeight = Math.max(8, terminalHeight - chromeHeight);
+
+  // Chart height: elegant proportions, not stretched to infinity
+  // Max 16 lines for the chart itself (leaves room for context info)
+  // Min 8 for readability, scales with terminal but with limits
+  const availableHeight = terminalHeight - 10; // header(2) + info(1) + xaxis(2) + footer(2) + margins(3)
+  const chartHeight = Math.min(16, Math.max(8, availableHeight));
 
   debug(`ChartScreen render: symbol=${symbol} owned=${owned} period=${selectedPeriod}`);
 
@@ -350,17 +354,19 @@ export function ChartScreen({
 
   // ═══════════════════════════════════════════════════════════════
   // UNIFIED CHART VIEW
-  // - If owned: header shows total gain from purchase, includes buy line
-  // - If not owned: header shows period change
-  // - Arrows ↑↓ ALWAYS change period
+  // - Elegant information hierarchy
+  // - Clear visual feedback on gains/losses
+  // - Contextual info without clutter
   // ═══════════════════════════════════════════════════════════════
 
   // Calculate gain if owned
   let totalGain = 0;
   let totalGainPercent = 0;
+  let unitGain = 0;
   if (owned && displayPrice && avgCost) {
-    totalGain = (displayPrice - avgCost) * quantity;
-    totalGainPercent = ((displayPrice - avgCost) / avgCost) * 100;
+    unitGain = displayPrice - avgCost;
+    totalGain = unitGain * quantity;
+    totalGainPercent = (unitGain / avgCost) * 100;
     debug(`Owner gain: $${totalGain.toFixed(2)} (${totalGainPercent.toFixed(2)}%)`);
   }
 
@@ -370,51 +376,56 @@ export function ChartScreen({
   const displayArrow = isPositive ? '▲' : '▼';
   const displaySign = isPositive ? '+' : '';
 
+  // Period change info (always useful)
+  const periodIsPositive = chartData.change >= 0;
+  const periodColor = periodIsPositive ? 'green' : 'red';
+  const periodArrow = periodIsPositive ? '▲' : '▼';
+
   return (
     <Box flexDirection="column" padding={1}>
-      {/* Header: Symbol on left, Gain/Change on right */}
-      <Box justifyContent="space-between" marginBottom={1}>
-        <Text bold color="white">{symbol}</Text>
+      {/* ═══ HEADER: Symbol + Price + Change ═══ */}
+      <Box justifyContent="space-between">
         <Box>
-          {owned ? (
-            // Show total gain from purchase
-            <Text color={displayColor} bold>
-              {displaySign}{formatMoney(totalGain)} {displayArrow} {formatPercent(Math.abs(totalGainPercent))}
-            </Text>
-          ) : (
-            // Show period change
-            <>
-              <Text bold color="white">{formatMoney(displayPrice)}</Text>
-              <Text color={displayColor}> {displayArrow} {formatPercent(Math.abs(chartData.changePercent))}</Text>
-            </>
-          )}
+          <Text bold color="white">{symbol}</Text>
+          <Text color="gray">  </Text>
+          <Text bold color="white">{formatMoney(displayPrice)}</Text>
+        </Box>
+        <Box>
+          {/* Period change - always shown */}
+          <Text color={periodColor}>
+            {periodArrow} {displaySign}{formatMoney(Math.abs(chartData.change))} ({formatPercent(Math.abs(chartData.changePercent))})
+          </Text>
         </Box>
       </Box>
 
-      {/* Chart */}
-      <Box flexDirection="column">
-        <Text>{chartRender}</Text>
-
-        {/* Purchase price reference line - only if owned */}
-        {owned && avgCost && (
+      {/* ═══ CONTEXT LINE: Ownership info OR Range ═══ */}
+      <Box justifyContent="space-between" marginBottom={0}>
+        {owned ? (
           <Box>
-            <Text color="gray">{'─'.repeat(8)}</Text>
-            <Text color="yellow"> compra {formatMoney(avgCost)} </Text>
-            <Text color="gray">{'─'.repeat(Math.max(0, chartWidth - 25))}</Text>
+            <Text color="gray">compra {formatMoney(avgCost)} × {quantity} → </Text>
+            <Text color={displayColor} bold>{displaySign}{formatMoney(totalGain)}</Text>
+            <Text color="gray"> ({formatPercent(Math.abs(totalGainPercent))})</Text>
           </Box>
+        ) : (
+          <Text color="gray">
+            rango: {formatMoney(chartData.min)} — {formatMoney(chartData.max)}
+          </Text>
         )}
+        <Text color="gray">{PERIODS[selectedPeriod].label}</Text>
+      </Box>
+
+      {/* ═══ CHART ═══ */}
+      <Box flexDirection="column" marginTop={1}>
+        <Text>{chartRender}</Text>
 
         {/* X Axis with dates */}
         <Text color="gray">{xAxisData.ticksLine}</Text>
         <Text color="gray">{xAxisData.labelsLine}</Text>
       </Box>
 
-      {/* Footer: Period on left, Actions on right */}
+      {/* ═══ FOOTER: Actions ═══ */}
       <Box marginTop={1} justifyContent="space-between">
-        <Box>
-          <Text color="white">{PERIODS[selectedPeriod].label}</Text>
-          <Text color="gray">  ↑↓</Text>
-        </Box>
+        <Text color="gray">↑↓ período</Text>
         <Box>
           <Text color="gray">b </Text>
           <Text color="white">comprar</Text>
