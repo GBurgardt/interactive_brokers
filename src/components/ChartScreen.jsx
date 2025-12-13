@@ -237,6 +237,7 @@ export function ChartScreen({
 
     // Resample to exactly chartWidth points (downsample or upsample) so it fills the screen.
     let sampledData = resampleLinear(closes, chartWidth);
+    if (sampledData.length === 0) return null;
 
     // Add current price as last point if available
     if (currentPrice && sampledData.length > 0) {

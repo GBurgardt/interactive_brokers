@@ -274,6 +274,8 @@ export function PortfolioReportScreen({
     if (valuesRaw.length === 0) return { values: [], dates: [], startTs, endTs };
 
     const values = resampleLinear(valuesRaw, chartWidth);
+    if (values.length === 0) return { values: [], dates: [], startTs, endTs };
+
     const ts = resampleLinear(datesRaw.map(d => d.getTime()), chartWidth);
     const dates = ts.map(t => new Date(t));
     return { values, dates, startTs, endTs };
@@ -348,9 +350,9 @@ export function PortfolioReportScreen({
   const displayArrow = isPositive ? '▲' : '▼';
   const displaySign = isPositive ? '+' : '';
 
-  // Min/max for context
-  const minValue = Math.min(...sampled.values);
-  const maxValue = Math.max(...sampled.values);
+  // Min/max for context (protect against empty arrays)
+  const minValue = sampled.values.length > 0 ? Math.min(...sampled.values) : 0;
+  const maxValue = sampled.values.length > 0 ? Math.max(...sampled.values) : 0;
 
   return (
     <Box flexDirection="column" padding={1}>
