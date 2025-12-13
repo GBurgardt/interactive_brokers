@@ -224,10 +224,10 @@ export function PortfolioReportScreen({
   const innerWidth = Math.max(0, terminalWidth - 2); // padding={1} left+right
   const chartWidth = Math.max(20, innerWidth - Y_AXIS_PADDING);
 
-  // Chart height: ~70% of available space, elegant proportions
-  const reservedLines = 9;
-  const availableHeight = terminalHeight - reservedLines;
-  const chartHeight = Math.min(14, Math.max(6, Math.floor(availableHeight * 0.7)));
+  // Chart height: FIXED sensible size
+  // Terminal 40 lines → chart 12 lines max
+  // Terminal 24 lines → chart 8 lines
+  const chartHeight = Math.min(12, Math.max(6, Math.floor(terminalHeight * 0.3)));
 
   // Unified input: Esc back, ↑↓ zoom
   useInput((input, key) => {

@@ -184,12 +184,10 @@ export function ChartScreen({
   const innerWidth = Math.max(0, terminalWidth - 2); // padding={1} left+right
   const chartWidth = Math.max(20, innerWidth - Y_AXIS_PADDING);
 
-  // Chart height: ~70% of available space, elegant proportions
-  // Reserve space for: header(2) + context(1) + xaxis(2) + footer(2) + padding(2) = 9 lines
-  const reservedLines = 9;
-  const availableHeight = terminalHeight - reservedLines;
-  // Use 70% of available, with min 6 and max 14
-  const chartHeight = Math.min(14, Math.max(6, Math.floor(availableHeight * 0.7)));
+  // Chart height: FIXED sensible size, not dynamic madness
+  // Terminal 40 lines → chart 12 lines max
+  // Terminal 24 lines → chart 8 lines
+  const chartHeight = Math.min(12, Math.max(6, Math.floor(terminalHeight * 0.3)));
 
   debug(`ChartScreen render: symbol=${symbol} owned=${owned} period=${selectedPeriod}`);
 
