@@ -36,8 +36,8 @@ Once you add them, they’ll render here:
 ## Install
 
 ```bash
-git clone https://github.com/GBurgardt/interactive_brokers.git
-cd interactive_brokers
+git clone https://github.com/GBurgardt/folio-ibkr.git
+cd folio-ibkr
 npm install
 ```
 
