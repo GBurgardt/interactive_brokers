@@ -10,210 +10,96 @@ const debug = (...args) => {
   }
 };
 
+// ═══════════════════════════════════════════════════════════════
+// PERIODOS DISPONIBLES
+// ═══════════════════════════════════════════════════════════════
 const PORTFOLIO_PERIODS = {
   '1M': { kind: 'months', n: 1, label: '1m' },
   '6M': { kind: 'months', n: 6, label: '6m' },
   '1Y': { kind: 'years', n: 1, label: '1y' },
-  'ALL': { kind: 'all', n: null, label: 'all time' },
+  'ALL': { kind: 'all', n: null, label: 'all' },
 };
-// Small -> big (↓ zoom in, ↑ zoom out)
 const PORTFOLIO_PERIOD_KEYS = ['1M', '6M', '1Y', 'ALL'];
 const DEFAULT_PERIOD = 'ALL';
 
-// Keep y-axis padding consistent with asciichart formatting:
-// formatMoney(...).padStart(10) => 10 chars, plus a space before plot = ~11
-const Y_AXIS_PADDING = 11;
+// Y-axis padding: 8 chars para el valor + 1 espacio
+const Y_AXIS_PADDING = 9;
 
-/**
- * Parse IB execution time to Date object
- * Format: "YYYYMMDD HH:MM:SS" or "YYYYMMDD  HH:MM:SS" (double space)
- */
-function parseExecutionTime(timeStr) {
-  if (!timeStr) return null;
-  const normalized = timeStr.replace(/\s+/g, ' ').trim();
-  const [datePart, timePart] = normalized.split(' ');
-  if (!datePart || datePart.length !== 8) return null;
+// ═══════════════════════════════════════════════════════════════
+// FORMATO COMPACTO PARA EJE Y
+// ═══════════════════════════════════════════════════════════════
+function formatCompact(value) {
+  if (value === null || value === undefined || isNaN(value)) return '$--';
 
-  const year = parseInt(datePart.slice(0, 4), 10);
-  const month = parseInt(datePart.slice(4, 6), 10) - 1;
-  const day = parseInt(datePart.slice(6, 8), 10);
+  const absValue = Math.abs(value);
+  let formatted;
 
-  let hours = 0;
-  let minutes = 0;
-  if (timePart) {
-    const [h, m] = timePart.split(':');
-    hours = parseInt(h, 10) || 0;
-    minutes = parseInt(m, 10) || 0;
+  if (absValue >= 1_000_000) {
+    formatted = `${(absValue / 1_000_000).toFixed(1)}M`;
+  } else if (absValue >= 1_000) {
+    formatted = `${(absValue / 1_000).toFixed(0)}K`;
+  } else {
+    formatted = absValue.toFixed(0);
   }
 
-  return new Date(year, month, day, hours, minutes);
+  return value >= 0 ? `$${formatted}` : `-$${formatted}`;
 }
 
-function formatDateForAxis(date, periodKey, startTs, endTs) {
+// ═══════════════════════════════════════════════════════════════
+// FORMATO DE FECHA PARA EJE X
+// ═══════════════════════════════════════════════════════════════
+function formatDateLabel(date, periodKey) {
   if (!date) return '';
-  const rangeMs = Math.max(0, endTs - startTs);
-
-  // Short ranges: show time, longer: show day/month.
-  if (rangeMs <= 6 * 60 * 60 * 1000) {
-    const h = String(date.getHours()).padStart(2, '0');
-    const m = String(date.getMinutes()).padStart(2, '0');
-    return `${h}:${m}`;
-  }
-
-  if (rangeMs <= 24 * 60 * 60 * 1000) {
-    const h = String(date.getHours()).padStart(2, '0');
-    return `${date.getDate()}/${date.getMonth() + 1} ${h}h`;
-  }
-
-  if (rangeMs >= 2 * 365 * 24 * 60 * 60 * 1000) {
-    return String(date.getFullYear());
-  }
 
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const y = String(date.getFullYear()).slice(-2);
-  if (rangeMs >= 120 * 24 * 60 * 60 * 1000) {
-    return `${months[date.getMonth()]} '${y}`;
+
+  // Para periodos cortos, mostrar día + mes
+  if (periodKey === '1M') {
+    return `${date.getDate()} ${months[date.getMonth()]}`;
   }
-  return `${date.getDate()} ${months[date.getMonth()]}`;
+
+  // Para periodos largos, mostrar mes + año
+  return `${months[date.getMonth()]} '${y}`;
 }
 
-function generateXAxisLabels(dates, chartWidth, periodKey, startTs, endTs) {
-  if (!dates || dates.length === 0 || chartWidth <= 0) return { ticksLine: '', labelsLine: '' };
-
-  const numLabels = 3;
-  const labelPositions = [];
-  for (let i = 0; i < numLabels; i++) {
-    const dataIndex = Math.floor((i / (numLabels - 1)) * (dates.length - 1));
-    const charPosition = Math.floor((i / (numLabels - 1)) * (chartWidth - 1));
-    labelPositions.push({ position: charPosition, date: dates[dataIndex] });
+// ═══════════════════════════════════════════════════════════════
+// GENERADOR DE EJE X MINIMALISTA (SOLO 2 FECHAS)
+// ═══════════════════════════════════════════════════════════════
+function generateSimpleXAxis(dates, chartWidth, periodKey) {
+  if (!dates || dates.length === 0 || chartWidth <= 0) {
+    return { line: '' };
   }
 
-  const ticksChars = new Array(chartWidth + Y_AXIS_PADDING).fill(' ');
-  for (let x = 0; x < chartWidth; x++) ticksChars[Y_AXIS_PADDING + x] = '─';
-  for (const { position } of labelPositions) ticksChars[Y_AXIS_PADDING + position] = '┬';
+  const firstDate = dates[0];
+  const lastDate = dates[dates.length - 1];
 
-  const labelsChars = new Array(chartWidth + Y_AXIS_PADDING).fill(' ');
-  for (let i = 0; i < labelPositions.length; i++) {
-    const { position, date } = labelPositions[i];
-    const labelText = formatDateForAxis(date, periodKey, startTs, endTs);
-    const startPos = Y_AXIS_PADDING + position;
+  const firstLabel = formatDateLabel(firstDate, periodKey);
+  const lastLabel = formatDateLabel(lastDate, periodKey);
 
-    let adjustedStart = startPos;
-    if (i === 0) adjustedStart = Y_AXIS_PADDING;
-    else if (i === labelPositions.length - 1) adjustedStart = Math.max(Y_AXIS_PADDING, startPos - labelText.length);
-    else adjustedStart = Math.max(Y_AXIS_PADDING, startPos - Math.floor(labelText.length / 2));
+  // Construir línea con fechas en los extremos
+  const totalWidth = chartWidth + Y_AXIS_PADDING;
+  const chars = new Array(totalWidth).fill(' ');
 
-    for (let j = 0; j < labelText.length && adjustedStart + j < labelsChars.length; j++) {
-      labelsChars[adjustedStart + j] = labelText[j];
-    }
+  // Fecha inicial (después del padding del eje Y)
+  for (let i = 0; i < firstLabel.length && Y_AXIS_PADDING + i < totalWidth; i++) {
+    chars[Y_AXIS_PADDING + i] = firstLabel[i];
   }
 
-  return { ticksLine: ticksChars.join(''), labelsLine: labelsChars.join('') };
+  // Fecha final (alineada a la derecha)
+  const lastStart = totalWidth - lastLabel.length;
+  for (let i = 0; i < lastLabel.length; i++) {
+    chars[lastStart + i] = lastLabel[i];
+  }
+
+  return { line: chars.join('') };
 }
 
-function clamp(n, min, max) {
-  return Math.max(min, Math.min(max, n));
-}
-
-function buildEventMarks({ history, executions, startTs, endTs, plotWidth }) {
-  const marks = new Array(plotWidth).fill(null).map(() => ({ ch: ' ', color: 'gray' }));
-  if (!history || history.length < 2 || startTs >= endTs) return marks;
-
-  const placeMark = (ts, kind) => {
-    const x = Math.round(((ts - startTs) / (endTs - startTs)) * (plotWidth - 1));
-    const idx = clamp(x, 0, plotWidth - 1);
-
-    const existing = marks[idx].ch;
-    if (existing !== ' ') {
-      marks[idx] = { ch: '◆', color: 'yellow' };
-      return;
-    }
-
-    if (kind === 'in') marks[idx] = { ch: '▲', color: 'green' };
-    else if (kind === 'out') marks[idx] = { ch: '▼', color: 'red' };
-  };
-
-  // 1) Executions: BOT => out, SLD => in
-  for (const exec of executions || []) {
-    const dt = parseExecutionTime(exec.time);
-    const ts = dt?.getTime?.();
-    if (!ts || ts < startTs || ts > endTs) continue;
-    const kind = exec.side === 'SLD' ? 'in' : 'out';
-    placeMark(ts, kind);
-  }
-
-  // 2) Cashflow-ish events: when cash + net liquidation jump together.
-  for (let i = 1; i < history.length; i++) {
-    const prev = history[i - 1];
-    const curr = history[i];
-    if (!prev || !curr) continue;
-
-    const prevNet = prev.netLiquidation;
-    const currNet = curr.netLiquidation;
-    const prevCash = prev.cash;
-    const currCash = curr.cash;
-    if (!Number.isFinite(prevNet) || !Number.isFinite(currNet) || !Number.isFinite(prevCash) || !Number.isFinite(currCash)) continue;
-
-    const dNet = currNet - prevNet;
-    const dCash = currCash - prevCash;
-
-    const thresholdNet = Math.max(100, Math.abs(prevNet) * 0.003);
-    const thresholdCash = Math.max(100, Math.abs(prevCash) * 0.01);
-
-    const ts = curr.ts;
-    if (!ts || ts < startTs || ts > endTs) continue;
-
-    const sameDirection = Math.sign(dNet) === Math.sign(dCash) && Math.sign(dNet) !== 0;
-    const bigEnough = Math.abs(dNet) >= thresholdNet && Math.abs(dCash) >= thresholdCash;
-
-    if (sameDirection && bigEnough) {
-      placeMark(ts, dNet > 0 ? 'in' : 'out');
-    }
-  }
-
-  return marks;
-}
-
-function overlayMarksOnChart(chart, values, marks, height) {
-  if (!chart || !values || values.length === 0 || !marks || marks.length === 0) return chart;
-
-  // Keep only marks that carry meaning.
-  const hasAnyMark = marks.some(m => m?.ch && m.ch !== ' ');
-  if (!hasAnyMark) return chart;
-
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min;
-
-  const lines = chart.split('\n');
-  // Defensive: asciichart may output a different number of rows than requested in edge cases.
-  const rows = Math.min(lines.length, height);
-
-  const placeAt = (rowIndex, xIndex, ch) => {
-    if (rowIndex < 0 || rowIndex >= rows) return;
-    const line = lines[rowIndex];
-    const pos = Y_AXIS_PADDING + xIndex;
-    if (!line || pos < 0 || pos >= line.length) return;
-    lines[rowIndex] = line.slice(0, pos) + ch + line.slice(pos + 1);
-  };
-
-  for (let x = 0; x < marks.length && x < values.length; x++) {
-    const ch = marks[x]?.ch;
-    if (!ch || ch === ' ') continue;
-
-    // Map value to row: top row = max, bottom row = min.
-    let scaled = 0.5;
-    if (range > 0) scaled = (values[x] - min) / range;
-    const row = clamp(rows - 1 - Math.round(scaled * (rows - 1)), 0, rows - 1);
-    placeAt(row, x, ch);
-  }
-
-  return lines.join('\n');
-}
-
+// ═══════════════════════════════════════════════════════════════
+// COMPONENTE PRINCIPAL
+// ═══════════════════════════════════════════════════════════════
 export function PortfolioReportScreen({
   history,
-  executions,
   onBack,
 }) {
   const [selectedPeriod, setSelectedPeriod] = useState(DEFAULT_PERIOD);
@@ -221,32 +107,45 @@ export function PortfolioReportScreen({
 
   const terminalWidth = stdout?.columns || 80;
   const terminalHeight = stdout?.rows || 24;
-  const innerWidth = Math.max(0, terminalWidth - 2); // padding={1} left+right
+  const innerWidth = Math.max(0, terminalWidth - 2);
   const chartWidth = Math.max(20, innerWidth - Y_AXIS_PADDING);
 
-  // Chart height: FIXED sensible size
-  // Terminal 40 lines → chart 12 lines max
-  // Terminal 24 lines → chart 8 lines
-  const chartHeight = Math.min(12, Math.max(6, Math.floor(terminalHeight * 0.3)));
+  // ALTURA DEL GRÁFICO: 45% de la terminal (más protagonismo)
+  // Mínimo 8 líneas, máximo 16 líneas
+  const chartHeight = Math.min(16, Math.max(8, Math.floor(terminalHeight * 0.45)));
 
-  // Unified input: Esc back, ↑↓ zoom
+  debug(`Terminal: ${terminalWidth}x${terminalHeight}, Chart: ${chartWidth}x${chartHeight}`);
+
+  // ═══════════════════════════════════════════════════════════════
+  // INPUT: Solo Esc para volver, ↑↓ para cambiar periodo
+  // Sin instrucciones visibles - el usuario descubre
+  // ═══════════════════════════════════════════════════════════════
   useInput((input, key) => {
     if (key.escape) {
+      debug('Navigating back');
       onBack?.();
     } else if (key.upArrow) {
       const i = PORTFOLIO_PERIOD_KEYS.indexOf(selectedPeriod);
-      if (i < PORTFOLIO_PERIOD_KEYS.length - 1) setSelectedPeriod(PORTFOLIO_PERIOD_KEYS[i + 1]);
+      if (i < PORTFOLIO_PERIOD_KEYS.length - 1) {
+        debug(`Period up: ${selectedPeriod} -> ${PORTFOLIO_PERIOD_KEYS[i + 1]}`);
+        setSelectedPeriod(PORTFOLIO_PERIOD_KEYS[i + 1]);
+      }
     } else if (key.downArrow) {
       const i = PORTFOLIO_PERIOD_KEYS.indexOf(selectedPeriod);
-      if (i > 0) setSelectedPeriod(PORTFOLIO_PERIOD_KEYS[i - 1]);
+      if (i > 0) {
+        debug(`Period down: ${selectedPeriod} -> ${PORTFOLIO_PERIOD_KEYS[i - 1]}`);
+        setSelectedPeriod(PORTFOLIO_PERIOD_KEYS[i - 1]);
+      }
     }
   });
 
-  // Keep selection valid if constants change
   useEffect(() => {
     if (!PORTFOLIO_PERIODS[selectedPeriod]) setSelectedPeriod(DEFAULT_PERIOD);
   }, [selectedPeriod]);
 
+  // ═══════════════════════════════════════════════════════════════
+  // FILTRAR HISTORIA POR PERIODO
+  // ═══════════════════════════════════════════════════════════════
   const filteredHistory = useMemo(() => {
     if (!history || history.length === 0) return [];
 
@@ -260,29 +159,30 @@ export function PortfolioReportScreen({
     return history.filter(p => p.ts >= cutoff);
   }, [history, selectedPeriod]);
 
+  // ═══════════════════════════════════════════════════════════════
+  // RESAMPLEAR DATOS PARA EL ANCHO DEL GRÁFICO
+  // ═══════════════════════════════════════════════════════════════
   const sampled = useMemo(() => {
     if (!filteredHistory || filteredHistory.length === 0) {
-      return { values: [], dates: [], startTs: 0, endTs: 0 };
+      return { values: [], dates: [] };
     }
-
-    const startTs = filteredHistory[0]?.ts || 0;
-    const endTs = filteredHistory[filteredHistory.length - 1]?.ts || 0;
 
     const valuesRaw = filteredHistory.map(p => p.netLiquidation);
     const datesRaw = filteredHistory.map(p => new Date(p.ts));
 
-    if (valuesRaw.length === 0) return { values: [], dates: [], startTs, endTs };
+    if (valuesRaw.length === 0) return { values: [], dates: [] };
 
     const values = resampleLinear(valuesRaw, chartWidth);
-    if (values.length === 0) return { values: [], dates: [], startTs, endTs };
+    if (values.length === 0) return { values: [], dates: [] };
 
     const ts = resampleLinear(datesRaw.map(d => d.getTime()), chartWidth);
     const dates = ts.map(t => new Date(t));
-    return { values, dates, startTs, endTs };
+    return { values, dates };
   }, [filteredHistory, chartWidth]);
 
-  const plotWidth = sampled.values.length;
-
+  // ═══════════════════════════════════════════════════════════════
+  // CALCULAR CAMBIO
+  // ═══════════════════════════════════════════════════════════════
   const chartData = useMemo(() => {
     if (!sampled.values || sampled.values.length < 2) return null;
     const first = sampled.values[0];
@@ -292,12 +192,20 @@ export function PortfolioReportScreen({
     return { first, last, change, changePercent };
   }, [sampled.values]);
 
+  // ═══════════════════════════════════════════════════════════════
+  // RENDERIZAR GRÁFICO CON COLOR SEGÚN PERFORMANCE
+  // ═══════════════════════════════════════════════════════════════
   const chartRender = useMemo(() => {
-    if (!sampled.values || sampled.values.length < 2) return null;
+    if (!sampled.values || sampled.values.length < 2 || !chartData) return null;
+
+    const isPositive = chartData.change >= 0;
+    const chartColor = isPositive ? asciichart.green : asciichart.red;
+
     try {
       return asciichart.plot(sampled.values, {
         height: chartHeight,
-        format: (x) => formatMoney(x).padStart(10),
+        colors: [chartColor],
+        format: (x) => formatCompact(x).padStart(8),
       });
     } catch (e) {
       debug('Chart render error:', e?.message);
@@ -305,91 +213,70 @@ export function PortfolioReportScreen({
     }
   }, [sampled.values, chartHeight, chartData]);
 
+  // ═══════════════════════════════════════════════════════════════
+  // EJE X SIMPLE
+  // ═══════════════════════════════════════════════════════════════
   const xAxis = useMemo(() => {
-    return generateXAxisLabels(sampled.dates, plotWidth, selectedPeriod, sampled.startTs, sampled.endTs);
-  }, [sampled.dates, plotWidth, selectedPeriod, sampled.startTs, sampled.endTs]);
+    return generateSimpleXAxis(sampled.dates, chartWidth, selectedPeriod);
+  }, [sampled.dates, chartWidth, selectedPeriod]);
 
-  const eventMarks = useMemo(() => {
-    return buildEventMarks({
-      history: filteredHistory,
-      executions,
-      startTs: sampled.startTs,
-      endTs: sampled.endTs,
-      plotWidth,
-    });
-  }, [filteredHistory, executions, sampled.startTs, sampled.endTs, plotWidth]);
+  // ═══════════════════════════════════════════════════════════════
+  // ESTADOS ESPECIALES
+  // ═══════════════════════════════════════════════════════════════
 
-  const chartWithMarks = useMemo(() => {
-    return overlayMarksOnChart(chartRender, sampled.values, eventMarks, chartHeight);
-  }, [chartRender, sampled.values, eventMarks, chartHeight]);
-
+  // Loading
   if (!filteredHistory || filteredHistory.length < 2) {
     return (
       <Box flexDirection="column" padding={1}>
-        <Box justifyContent="space-between">
-          <Text bold color="white">portfolio</Text>
-          <Text color="gray">loading...</Text>
-        </Box>
+        <Text color="gray">loading...</Text>
       </Box>
     );
   }
 
+  // No data
   if (!chartData || !chartRender) {
     return (
       <Box flexDirection="column" padding={1}>
-        <Text bold color="white">portfolio</Text>
-        <Box marginTop={1}>
-          <Text color="gray">No data</Text>
+        <Box>
+          <Text bold color="white">{formatMoney(0)}</Text>
+          <Text color="gray">   </Text>
+          <Text color="gray">no data</Text>
+          <Text color="gray">   </Text>
+          <Text dimColor>{PORTFOLIO_PERIODS[selectedPeriod].label}</Text>
         </Box>
       </Box>
     );
   }
 
-  const isPositive = chartData.change >= 0;
-  const displayColor = isPositive ? 'green' : 'red';
-  const displayArrow = isPositive ? '▲' : '▼';
-  const displaySign = isPositive ? '+' : '';
+  // ═══════════════════════════════════════════════════════════════
+  // RENDER PRINCIPAL - DISEÑO APPLE-STYLE
+  // ═══════════════════════════════════════════════════════════════
 
-  // Min/max for context (protect against empty arrays)
-  const minValue = sampled.values.length > 0 ? Math.min(...sampled.values) : 0;
-  const maxValue = sampled.values.length > 0 ? Math.max(...sampled.values) : 0;
+  const isPositive = chartData.change >= 0;
+  const changeColor = isPositive ? 'green' : 'red';
+  const changeSign = isPositive ? '+' : '';
 
   return (
     <Box flexDirection="column" padding={1}>
-      {/* ═══ HEADER: Title + Value + Period + Change ═══ */}
-      <Box justifyContent="space-between">
-        <Box>
-          <Text bold color="white">portfolio</Text>
-          <Text color="gray">  </Text>
-          <Text bold color="white">{formatMoney(chartData.last)}</Text>
-          <Text color="gray">  </Text>
-          <Text color="cyan">{PORTFOLIO_PERIODS[selectedPeriod].label}</Text>
-        </Box>
-        <Box>
-          <Text color={displayColor}>
-            {displayArrow} {displaySign}{formatMoney(Math.abs(chartData.change))} ({formatPercent(Math.abs(chartData.changePercent))})
-          </Text>
-        </Box>
-      </Box>
-
-      {/* ═══ CONTEXT LINE: Range ═══ */}
-      <Box justifyContent="space-between" marginBottom={0}>
-        <Text color="gray">
-          range: {formatMoney(minValue)} — {formatMoney(maxValue)}
+      {/* ═══ HEADER: Una sola línea. Valor + Cambio + Periodo ═══ */}
+      <Box>
+        <Text bold color="white">{formatMoney(chartData.last)}</Text>
+        <Text color="gray">   </Text>
+        <Text color={changeColor} bold>
+          {changeSign}{formatMoney(chartData.change)} ({formatPercent(Math.abs(chartData.changePercent))})
         </Text>
+        <Text color="gray">   </Text>
+        <Text dimColor>{PORTFOLIO_PERIODS[selectedPeriod].label}</Text>
       </Box>
 
-      {/* ═══ CHART ═══ */}
+      {/* ═══ GRÁFICO: El protagonista ═══ */}
       <Box flexDirection="column" marginTop={1}>
-        <Text>{chartWithMarks}</Text>
-        <Text color="gray">{xAxis.ticksLine}</Text>
-        <Text color="gray">{xAxis.labelsLine}</Text>
+        <Text>{chartRender}</Text>
       </Box>
 
-      {/* ═══ FOOTER: Controls + Legend ═══ */}
-      <Box marginTop={1} justifyContent="space-between">
-        <Text color="gray">↑↓ period</Text>
-        <Text color="gray">▲ inflow  ▼ outflow</Text>
+      {/* ═══ EJE X: Solo fecha inicio y fin ═══ */}
+      <Box>
+        <Text color="gray">{xAxis.line}</Text>
       </Box>
     </Box>
   );

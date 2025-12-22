@@ -474,7 +474,6 @@ export function App({ paperTrading = false }) {
       {screen === 'report' && (
         <PortfolioReportScreen
           history={portfolioHistory}
-          executions={allExecutions}
           onBack={navigateBack}
         />
       )}
