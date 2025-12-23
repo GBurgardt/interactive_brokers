@@ -47,34 +47,47 @@ function formatCompact(value) {
 
 // ═══════════════════════════════════════════════════════════════
 // FORMATO DE FECHA PARA EJE X
+// Adapta el formato según el RANGO REAL de los datos, no el periodo
 // ═══════════════════════════════════════════════════════════════
-function formatDateLabel(date, periodKey) {
+function formatDateLabel(date, rangeDays) {
   if (!date) return '';
 
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const y = String(date.getFullYear()).slice(-2);
+  const d = date.getDate();
+  const m = months[date.getMonth()];
 
-  // Para periodos cortos (1M), mostrar día + mes abreviado
-  if (periodKey === '1M') {
-    return `${date.getDate()}${months[date.getMonth()].slice(0, 3)}`;
+  // Rango < 60 días: mostrar día + mes (ej: "15 Dec")
+  if (rangeDays < 60) {
+    return `${d} ${m}`;
   }
 
-  // Para periodos largos, mostrar mes + año
-  return `${months[date.getMonth()]} '${y}`;
+  // Rango < 365 días: mostrar día + mes abreviado (ej: "15Dec")
+  if (rangeDays < 365) {
+    return `${d}${m.slice(0, 3)}`;
+  }
+
+  // Rango >= 1 año: mostrar mes + año (ej: "Dec '25")
+  return `${m} '${y}`;
 }
 
 // ═══════════════════════════════════════════════════════════════
-// GENERADOR DE EJE X CON 5 FECHAS Y LÍNEA DE TICKS
+// GENERADOR DE EJE X CON 7 FECHAS Y LÍNEA DE TICKS
 // ═══════════════════════════════════════════════════════════════
-function generateXAxis(dates, chartWidth, periodKey) {
+function generateXAxis(dates, chartWidth) {
   if (!dates || dates.length === 0 || chartWidth <= 0) {
     return { ticksLine: '', labelsLine: '' };
   }
 
   const totalWidth = chartWidth + Y_AXIS_PADDING;
 
-  // 5 etiquetas: inicio, 25%, 50%, 75%, fin
-  const numLabels = 5;
+  // Calcular el rango real en días
+  const firstDate = dates[0];
+  const lastDate = dates[dates.length - 1];
+  const rangeDays = Math.max(1, Math.ceil((lastDate - firstDate) / (1000 * 60 * 60 * 24)));
+
+  // 7 etiquetas distribuidas uniformemente
+  const numLabels = 7;
   const labelPositions = [];
 
   for (let i = 0; i < numLabels; i++) {
@@ -87,7 +100,7 @@ function generateXAxis(dates, chartWidth, periodKey) {
     });
   }
 
-  // Línea de ticks: ─────┬─────┬─────┬─────┬─────
+  // Línea de ticks: ─────┬─────┬─────┬─────┬─────┬─────┬─────
   const ticksChars = new Array(totalWidth).fill(' ');
   for (let x = 0; x < chartWidth; x++) {
     ticksChars[Y_AXIS_PADDING + x] = '─';
@@ -100,10 +113,10 @@ function generateXAxis(dates, chartWidth, periodKey) {
   const labelsChars = new Array(totalWidth).fill(' ');
   for (let i = 0; i < labelPositions.length; i++) {
     const { position, date } = labelPositions[i];
-    const labelText = formatDateLabel(date, periodKey);
+    const labelText = formatDateLabel(date, rangeDays);
     const startPos = Y_AXIS_PADDING + position;
 
-    // Ajustar posición para que no se salga
+    // Ajustar posición para que no se salga ni se superponga
     let adjustedStart = startPos;
     if (i === 0) {
       adjustedStart = Y_AXIS_PADDING;
@@ -254,8 +267,8 @@ export function PortfolioReportScreen({
   // EJE X
   // ═══════════════════════════════════════════════════════════════
   const xAxis = useMemo(() => {
-    return generateXAxis(sampled.dates, chartWidth, selectedPeriod);
-  }, [sampled.dates, chartWidth, selectedPeriod]);
+    return generateXAxis(sampled.dates, chartWidth);
+  }, [sampled.dates, chartWidth]);
 
   // ═══════════════════════════════════════════════════════════════
   // ESTADOS ESPECIALES
