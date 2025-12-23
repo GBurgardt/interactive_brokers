@@ -306,14 +306,12 @@ export function PortfolioReportScreen({
     const isPositive = chartData.totalGain >= 0;
     const portfolioColor = isPositive ? asciichart.green : asciichart.red;
 
-    // Color gris para cost basis (usando código ANSI directo)
-    const grayColor = (s) => `\x1b[90m${s}\x1b[0m`;
-
     try {
       // asciichart soporta múltiples series
+      // Usamos darkgray para el cost basis (es un color predefinido de asciichart)
       return asciichart.plot([sampled.values, sampled.costBasis], {
         height: chartHeight,
-        colors: [portfolioColor, grayColor],
+        colors: [portfolioColor, asciichart.darkgray],
         format: (x) => formatCompact(x).padStart(8),
       });
     } catch (e) {
