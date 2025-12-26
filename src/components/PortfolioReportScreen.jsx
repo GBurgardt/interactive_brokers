@@ -14,12 +14,16 @@ const debug = (...args) => {
 // PERIODOS DISPONIBLES
 // ═══════════════════════════════════════════════════════════════
 const PORTFOLIO_PERIODS = {
+  '1D': { kind: 'days', n: 1, label: '1d' },
+  '3D': { kind: 'days', n: 3, label: '3d' },
+  '1W': { kind: 'weeks', n: 1, label: '1w' },
+  '4W': { kind: 'weeks', n: 4, label: '4w' },
   '1M': { kind: 'months', n: 1, label: '1m' },
   '6M': { kind: 'months', n: 6, label: '6m' },
   '1Y': { kind: 'years', n: 1, label: '1y' },
   'ALL': { kind: 'all', n: null, label: 'all' },
 };
-const PORTFOLIO_PERIOD_KEYS = ['1M', '6M', '1Y', 'ALL'];
+const PORTFOLIO_PERIOD_KEYS = ['1D', '3D', '1W', '4W', '1M', '6M', '1Y', 'ALL'];
 const DEFAULT_PERIOD = 'ALL';
 
 const Y_AXIS_PADDING = 9;
@@ -204,6 +208,12 @@ export function PortfolioReportScreen({ history, onBack }) {
     if (!history || history.length === 0) return [];
     const period = PORTFOLIO_PERIODS[selectedPeriod];
     if (!period || period.kind === 'all') return history;
+    if (period.kind === 'days' || period.kind === 'weeks') {
+      const dayMs = 24 * 60 * 60 * 1000;
+      const days = period.kind === 'weeks' ? period.n * 7 : period.n;
+      const cutoffTs = Date.now() - (days * dayMs);
+      return history.filter(p => p.ts >= cutoffTs);
+    }
     const cutoffDate = new Date();
     if (period.kind === 'months') cutoffDate.setMonth(cutoffDate.getMonth() - period.n);
     if (period.kind === 'years') cutoffDate.setFullYear(cutoffDate.getFullYear() - period.n);
