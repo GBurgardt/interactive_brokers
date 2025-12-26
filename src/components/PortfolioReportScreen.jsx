@@ -203,22 +203,43 @@ export function PortfolioReportScreen({ history, onBack }) {
     if (!PORTFOLIO_PERIODS[selectedPeriod]) setSelectedPeriod(DEFAULT_PERIOD);
   }, [selectedPeriod]);
 
-  // Filtrar por periodo
-  const filteredHistory = useMemo(() => {
-    if (!history || history.length === 0) return [];
+  const periodRange = useMemo(() => {
     const period = PORTFOLIO_PERIODS[selectedPeriod];
-    if (!period || period.kind === 'all') return history;
+    if (!period || period.kind === 'all') return null;
+    const endTs = Date.now();
     if (period.kind === 'days' || period.kind === 'weeks') {
       const dayMs = 24 * 60 * 60 * 1000;
       const days = period.kind === 'weeks' ? period.n * 7 : period.n;
-      const cutoffTs = Date.now() - (days * dayMs);
-      return history.filter(p => p.ts >= cutoffTs);
+      return { startTs: endTs - (days * dayMs), endTs };
     }
     const cutoffDate = new Date();
     if (period.kind === 'months') cutoffDate.setMonth(cutoffDate.getMonth() - period.n);
     if (period.kind === 'years') cutoffDate.setFullYear(cutoffDate.getFullYear() - period.n);
-    return history.filter(p => p.ts >= cutoffDate.getTime());
-  }, [history, selectedPeriod]);
+    return { startTs: cutoffDate.getTime(), endTs };
+  }, [selectedPeriod]);
+
+  // Filtrar por periodo
+  const filteredHistory = useMemo(() => {
+    if (!history || history.length === 0) return [];
+    if (!periodRange) return history;
+    return history.filter(p => p.ts >= periodRange.startTs);
+  }, [history, periodRange]);
+
+  // Pad chart range to the selected period (so X axis reflects the window)
+  const chartHistory = useMemo(() => {
+    if (!filteredHistory || filteredHistory.length === 0) return [];
+    if (!periodRange) return filteredHistory;
+    const out = filteredHistory.slice();
+    const first = out[0];
+    const last = out[out.length - 1];
+    if (first.ts > periodRange.startTs) {
+      out.unshift({ ...first, ts: periodRange.startTs });
+    }
+    if (last.ts < periodRange.endTs) {
+      out.push({ ...last, ts: periodRange.endTs });
+    }
+    return out;
+  }, [filteredHistory, periodRange]);
 
   // Detectar cash flows (usando TODO el historial para el total)
   const { flows, totalInvested } = useMemo(() => {
@@ -235,13 +256,13 @@ export function PortfolioReportScreen({ history, onBack }) {
 
   // Resamplear
   const sampled = useMemo(() => {
-    if (!filteredHistory || filteredHistory.length === 0) return { values: [], dates: [] };
-    const valuesRaw = filteredHistory.map(p => p.netLiquidation);
-    const datesRaw = filteredHistory.map(p => new Date(p.ts));
+    if (!chartHistory || chartHistory.length === 0) return { values: [], dates: [] };
+    const valuesRaw = chartHistory.map(p => p.netLiquidation);
+    const datesRaw = chartHistory.map(p => new Date(p.ts));
     const values = resampleLinear(valuesRaw, chartWidth);
     const ts = resampleLinear(datesRaw.map(d => d.getTime()), chartWidth);
     return { values, dates: ts.map(t => new Date(t)) };
-  }, [filteredHistory, chartWidth]);
+  }, [chartHistory, chartWidth]);
 
   // Calcular ganancia
   const chartData = useMemo(() => {
